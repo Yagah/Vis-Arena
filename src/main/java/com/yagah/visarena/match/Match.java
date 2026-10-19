@@ -78,6 +78,8 @@ public final class Match {
     private int stateTicks;
     private int timeLeft;
     private boolean suddenDeath;
+    /** Set when a kill or a departure may have decided the match, so the rules are asked only then. */
+    private boolean scoresChanged = true;
     @Nullable
     private ModeRules.Result result;
 
@@ -197,10 +199,13 @@ public final class Match {
                 }
             }
         });
-        Optional<ModeRules.Result> won = rules.decided(this);
-        if (won.isPresent()) {
-            end(won.get());
-            return;
+        if (scoresChanged) {
+            scoresChanged = false;
+            Optional<ModeRules.Result> won = rules.decided(this);
+            if (won.isPresent()) {
+                end(won.get());
+                return;
+            }
         }
         if (--timeLeft <= 0) {
             Optional<ModeRules.Result> timeUp = rules.timeUp(this, suddenDeath || ArenaConfig.SUDDEN_DEATH_SECONDS.get() == 0);
@@ -269,6 +274,7 @@ public final class Match {
             return;
         }
         fighter.leave();
+        scoresChanged = true;
         unfreeze(player);
         leaveTeam(player);
         bossBar.removePlayer(player);
@@ -307,6 +313,7 @@ public final class Match {
         Optional<Fighter> killer = killer(victim, source)
                 .filter(other -> other != fighter && (other.team().isEmpty() || !other.team().equals(fighter.team())));
         killer.ifPresent(Fighter::addKill);
+        scoresChanged = true;
         Component message = killer.map(k -> name(k)
                         .append(Component.literal(" eliminated ").withStyle(ChatFormatting.GRAY))
                         .append(name(fighter)))

@@ -27,7 +27,10 @@ public interface ModeRules {
     /** Where a fighter comes back after dying. */
     Spot respawnSpot(Match match, ServerPlayer player);
 
-    /** A result once the match is won outright (score limit, or everyone else gone), else empty. Checked every tick. */
+    /**
+     * A result once the match is won outright (score limit, or everyone else gone), else empty. Asked after each kill
+     * or departure.
+     */
     Optional<Result> decided(Match match);
 
     /**
