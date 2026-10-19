@@ -15,6 +15,9 @@ public final class Fighter {
     private int protectedUntil;
     private boolean present = true;
     private Optional<TeamColor> team = Optional.empty();
+    /** In round modes: rounds won, and whether they're out (downed) until the next round. */
+    private int roundsWon;
+    private boolean out;
 
     Fighter(UUID id, String name) {
         this.id = id;
@@ -57,6 +60,23 @@ public final class Fighter {
 
     void addDeath() {
         deaths++;
+    }
+
+    public int roundsWon() {
+        return roundsWon;
+    }
+
+    void addRound() {
+        roundsWon++;
+    }
+
+    /** True while downed in a round mode, watching the rest of the round. */
+    public boolean out() {
+        return out;
+    }
+
+    void setOut(boolean out) {
+        this.out = out;
     }
 
     void setProtectedUntil(int tick) {

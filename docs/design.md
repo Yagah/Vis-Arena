@@ -70,6 +70,12 @@ Falling below the map's floor height counts as a death (void arenas).
 All numbers are config. Ties: FFA and TDM go to sudden death (next kill wins, 60 s, then a draw); Core Siege compares
 team kills, then draws.
 
+**1v1 rounds.** Each round starts with both players refreshed and frozen on the two spawns farthest apart. A downed
+player watches the rest of the round as a spectator (and can't affect anything); the one left standing takes it. When a
+round's time runs out, whoever has more health left (as a share of their max) takes it; level on health, or both
+down, is a drawn round. A pause (`roundPauseSeconds`, 3) shows the round's result and the score, then the next round's
+countdown starts. First to 3 rounds wins; after 9 rounds (drawn ones count) the one ahead wins, or it's a draw.
+
 **TDM and Core Siege teams** are vanilla teams named after their colour (red, blue), made for the match and removed
 after, with friendly fire off and name tags shown to the team only. Players are dealt into teams by queue order,
 alternating; parties are a later idea.

@@ -38,6 +38,10 @@ public final class ArenaConfig {
             .comment("Seconds the winner is shown before everyone goes back to the lobby.")
             .defineInRange("endSeconds", 10, 1, 120);
 
+    public static final ModConfigSpec.IntValue ROUND_PAUSE_SECONDS = BUILDER
+            .comment("In round modes (1v1), seconds the round's result is shown before the next round's countdown.")
+            .defineInRange("roundPauseSeconds", 3, 1, 60);
+
     public static final ModConfigSpec.IntValue SUDDEN_DEATH_SECONDS = BUILDER
             .comment("On a tie when time runs out, seconds of sudden death (the next kill to break the tie wins) before a draw.")
             .defineInRange("suddenDeathSeconds", 60, 0, 600);

@@ -21,7 +21,24 @@ public interface ModeRules {
     record Result(Set<UUID> winners, Component headline, Component detail) {
     }
 
-    /** Each fighter's first spawn. */
+    /** A finished round: who took it (empty for a drawn round) and the headline shown. */
+    record RoundEnd(Optional<UUID> winner, Component headline) {
+    }
+
+    /**
+     * True for modes played in rounds (1v1): a downed fighter is out, watching as a spectator, until the next round,
+     * instead of respawning. {@link #roundOver} says when a round ends; {@link #decided} then says if the match has.
+     */
+    default boolean rounds() {
+        return false;
+    }
+
+    /** For round modes: the round's result once it's over, else empty. When its time is up, always a result. */
+    default Optional<RoundEnd> roundOver(Match match, boolean timeUp) {
+        return Optional.empty();
+    }
+
+    /** Each fighter's first spawn (and, in round modes, their spawn each round). */
     Map<UUID, Spot> startSpots(Match match);
 
     /** Where a fighter comes back after dying. */

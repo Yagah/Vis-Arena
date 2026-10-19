@@ -41,6 +41,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Team;
 
@@ -51,7 +52,7 @@ import net.minecraft.world.scores.Team;
  * rules pick, with a moment of spawn protection.
  */
 public final class Match {
-    public enum State { STARTING, PLAYING, ENDED }
+    public enum State { STARTING, PLAYING, ROUND_OVER, ENDED }
 
     private static final ResourceLocation FREEZE = ResourceLocation.fromNamespaceAndPath(VisArena.MODID, "freeze");
     /** How far a frozen player may drift before being put back. */
@@ -78,6 +79,8 @@ public final class Match {
     private int stateTicks;
     private int timeLeft;
     private boolean suddenDeath;
+    /** The round being played, from 1 (round modes only). */
+    private int round = 1;
     /** Set when a kill or a departure may have decided the match, so the rules are asked only then. */
     private boolean scoresChanged = true;
     @Nullable
@@ -116,6 +119,11 @@ public final class Match {
         return suddenDeath;
     }
 
+    /** The round being played, from 1 (round modes). */
+    public int round() {
+        return round;
+    }
+
     public Map<UUID, Fighter> fighters() {
         return fighters;
     }
@@ -136,16 +144,24 @@ public final class Match {
     /** Puts everyone on their teams and spawns, frozen, with the HUD up. */
     void begin() {
         makeTeams();
+        for (ServerPlayer player : online()) {
+            bossBar.addPlayer(player);
+            sidebar.show(player);
+        }
+        placeAll();
+        updateHud();
+    }
+
+    /** Everyone fresh and frozen on their start spots, for the countdown to the fight (or to the next round). */
+    private void placeAll() {
         Map<UUID, Spot> spots = rules.startSpots(this);
         for (ServerPlayer player : online()) {
             Spot spot = spots.get(player.getUUID());
             Players.refresh(player);
+            fighters.get(player.getUUID()).setOut(false);
             place(player, spot);
             freeze(player, spot);
-            bossBar.addPlayer(player);
-            sidebar.show(player);
         }
-        updateHud();
     }
 
     void tick() {
@@ -154,6 +170,15 @@ public final class Match {
         switch (state) {
             case STARTING -> tickStarting();
             case PLAYING -> tickPlaying();
+            case ROUND_OVER -> {
+                if (stateTicks >= ArenaConfig.ticks(ArenaConfig.ROUND_PAUSE_SECONDS)) {
+                    round++;
+                    state = State.STARTING;
+                    stateTicks = 0;
+                    placeAll();
+                    updateHud();
+                }
+            }
             case ENDED -> {
                 if (stateTicks >= ArenaConfig.ticks(ArenaConfig.END_SECONDS)) {
                     finish();
@@ -184,7 +209,7 @@ public final class Match {
             int seconds = (freeze - stateTicks + 19) / 20;
             for (ServerPlayer player : online()) {
                 Titles.show(player, Component.literal(String.valueOf(seconds)).withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD),
-                        Component.literal(mode.displayName() + " on " + map.name()), 22);
+                        Component.literal(rules.rounds() ? "Round " + round : mode.displayName() + " on " + map.name()), 22);
                 player.playNotifySound(SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.MASTER, 1.0f, 1.0f);
             }
         }
@@ -201,13 +226,22 @@ public final class Match {
         });
         if (scoresChanged) {
             scoresChanged = false;
+            Optional<ModeRules.RoundEnd> roundEnd = rules.rounds() ? rules.roundOver(this, false) : Optional.empty();
+            if (roundEnd.isPresent()) {
+                endRound(roundEnd.get());
+                return;
+            }
             Optional<ModeRules.Result> won = rules.decided(this);
             if (won.isPresent()) {
                 end(won.get());
                 return;
             }
         }
-        if (--timeLeft <= 0) {
+        if (--timeLeft <= 0 && rules.rounds()) {
+            endRound(rules.roundOver(this, true).orElseThrow());
+            return;
+        }
+        if (timeLeft <= 0) {
             Optional<ModeRules.Result> timeUp = rules.timeUp(this, suddenDeath || ArenaConfig.SUDDEN_DEATH_SECONDS.get() == 0);
             if (timeUp.isPresent()) {
                 end(timeUp.get());
@@ -225,6 +259,31 @@ public final class Match {
         }
     }
 
+    /** A round is over: a point to its winner, then the match's end if that decided it, or a pause before the next. */
+    private void endRound(ModeRules.RoundEnd roundEnd) {
+        roundEnd.winner().map(fighters::get).ifPresent(Fighter::addRound);
+        Optional<ModeRules.Result> won = rules.decided(this);
+        if (won.isPresent()) {
+            end(won.get());
+            return;
+        }
+        state = State.ROUND_OVER;
+        stateTicks = 0;
+        MutableComponent score = Component.empty();
+        for (Fighter fighter : fighters.values()) {
+            if (!score.getSiblings().isEmpty()) {
+                score.append(Component.literal("  -  ").withStyle(ChatFormatting.GRAY));
+            }
+            score.append(name(fighter)).append(Component.literal(" " + fighter.roundsWon()).withStyle(ChatFormatting.GOLD));
+        }
+        for (ServerPlayer player : online()) {
+            Titles.show(player, roundEnd.headline(), score, ArenaConfig.ticks(ArenaConfig.ROUND_PAUSE_SECONDS));
+            boolean tookIt = roundEnd.winner().equals(Optional.of(player.getUUID()));
+            player.playNotifySound(tookIt ? SoundEvents.PLAYER_LEVELUP : SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.MASTER, 0.8f, 1.0f);
+        }
+        updateHud();
+    }
+
     private void end(ModeRules.Result result) {
         this.result = result;
         state = State.ENDED;
@@ -234,7 +293,8 @@ public final class Match {
         fighters.values().stream()
                 .sorted(Comparator.comparingInt(Fighter::kills).reversed().thenComparingInt(Fighter::deaths))
                 .forEach(fighter -> summary.append(Component.literal("\n  ")).append(name(fighter))
-                        .append(Component.literal(": " + fighter.kills() + " kills, " + fighter.deaths() + " deaths").withStyle(ChatFormatting.GRAY)));
+                        .append(Component.literal(": " + (rules.rounds() ? fighter.roundsWon() + " rounds, " : "")
+                                + fighter.kills() + " kills, " + fighter.deaths() + " deaths").withStyle(ChatFormatting.GRAY)));
         for (ServerPlayer player : online()) {
             Titles.show(player, result.headline(), result.detail(), ArenaConfig.ticks(ArenaConfig.END_SECONDS));
             boolean won = result.winners().contains(player.getUUID());
@@ -289,7 +349,13 @@ public final class Match {
     /** True if this fighter can't be hurt right now: before the fight, after it, or with spawn protection. */
     boolean shielded(ServerPlayer player) {
         Fighter fighter = fighters.get(player.getUUID());
-        return state != State.PLAYING || fighter == null || fighter.protectedAt(tick);
+        return state != State.PLAYING || fighter == null || fighter.out() || fighter.protectedAt(tick);
+    }
+
+    /** True if this fighter is out of the current round, so nothing they do can hurt anyone. */
+    boolean benched(Entity entity) {
+        Fighter fighter = fighters.get(entity.getUUID());
+        return fighter != null && fighter.out();
     }
 
     /**
@@ -327,6 +393,15 @@ public final class Match {
         });
         Titles.show(victim, Component.literal("Eliminated").withStyle(ChatFormatting.RED),
                 killer.map(k -> Component.literal("by " + k.name())).orElse(Component.empty()), 30);
+        scoresChanged = true;
+        if (rules.rounds()) {
+            // Out until the next round: watching, where they fell.
+            fighter.setOut(true);
+            Players.refresh(victim);
+            victim.setGameMode(GameType.SPECTATOR);
+            updateHud();
+            return;
+        }
         Players.refresh(victim);
         place(victim, rules.respawnSpot(this, victim));
         fighter.setProtectedUntil(tick + ArenaConfig.ticks(ArenaConfig.SPAWN_PROTECTION_SECONDS));
@@ -435,7 +510,7 @@ public final class Match {
         List<ServerPlayer> viewers = online();
         String time = clock(state == State.STARTING ? ArenaConfig.timeLimitTicks(mode) : timeLeft);
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.literal(suddenDeath ? "Sudden death " + time : "Time " + time)
+        lines.add(Component.literal(suddenDeath ? "Sudden death " + time : (rules.rounds() ? "Round " + round + "  " : "Time ") + time)
                 .withStyle(suddenDeath ? ChatFormatting.RED : ChatFormatting.WHITE));
         lines.add(Component.literal(" "));
         lines.addAll(rules.scoreLines(this));
@@ -443,14 +518,18 @@ public final class Match {
 
         switch (state) {
             case STARTING -> {
-                bossBar.setName(Component.literal(mode.displayName() + " on " + map.name() + " - get ready"));
+                bossBar.setName(Component.literal((rules.rounds() ? mode.displayName() + " round " + round : mode.displayName() + " on " + map.name()) + " - get ready"));
                 bossBar.setProgress(1);
             }
             case PLAYING -> {
                 int total = suddenDeath ? ArenaConfig.ticks(ArenaConfig.SUDDEN_DEATH_SECONDS) : ArenaConfig.timeLimitTicks(mode);
-                bossBar.setName(Component.literal((suddenDeath ? "Sudden death " : mode.displayName() + "  ") + time));
+                bossBar.setName(Component.literal((suddenDeath ? "Sudden death " : mode.displayName() + (rules.rounds() ? " round " + round : "") + "  ") + time));
                 bossBar.setColor(suddenDeath ? BossEvent.BossBarColor.RED : BossEvent.BossBarColor.YELLOW);
                 bossBar.setProgress(Math.clamp(timeLeft / (float) Math.max(1, total), 0f, 1f));
+            }
+            case ROUND_OVER -> {
+                bossBar.setName(Component.literal(mode.displayName() + " round " + round + " over"));
+                bossBar.setProgress(1);
             }
             case ENDED -> {
                 bossBar.setName(result != null ? result.headline() : Component.literal("Match over"));

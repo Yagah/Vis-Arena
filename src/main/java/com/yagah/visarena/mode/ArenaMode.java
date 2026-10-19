@@ -83,7 +83,7 @@ public enum ArenaMode {
     }
 
     /** How each built mode makes the rules for a new match; the others are still to come. */
-    private static final Map<ArenaMode, Supplier<ModeRules>> RULES = Map.of(FFA, FfaRules::new, TDM, TdmRules::new);
+    private static final Map<ArenaMode, Supplier<ModeRules>> RULES = Map.of(FFA, FfaRules::new, TDM, TdmRules::new, DUEL, DuelRules::new);
 
     /** The rules for a new match, or empty while the mode is still to come. */
     public Optional<ModeRules> rules() {

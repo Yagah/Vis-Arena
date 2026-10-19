@@ -103,8 +103,10 @@ public final class Matches {
             return;
         }
         Entity attacker = event.getSource().getEntity();
-        boolean outsider = attacker != null && VisAllies.owner(attacker) instanceof ServerPlayer owner && BY_PLAYER.get(owner.getUUID()) != match;
-        if (match.shielded(victim) || outsider) {
+        Entity owner = attacker == null ? null : VisAllies.owner(attacker);
+        // Nobody outside the match, nor a fighter out of the round (spectating), can hurt a fighter.
+        boolean outsider = owner instanceof ServerPlayer player && BY_PLAYER.get(player.getUUID()) != match;
+        if (match.shielded(victim) || outsider || (owner != null && match.benched(owner))) {
             event.setCanceled(true);
         }
     }
