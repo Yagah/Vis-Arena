@@ -8,8 +8,8 @@ for a mode, and are sent into an arena map when enough players are ready. Modes:
 - **FFA** (free-for-all): everyone for themselves; most kills wins.
 - **TDM** (team deathmatch): two teams; most team kills wins.
 - **1v1** (duel): two players, best of several short rounds.
-- **Core Siege**: two teams, each defending a core. Standing in the enemy's core zone, uncontested, drains its hit
-  points. Destroy theirs first, or have more left when time runs out.
+- **Core Siege**: two teams take turns, one half each, attacking one core while the other defends. Break it faster
+  than the other team did, or do more damage to it if neither breaks it.
 
 The server's world is dedicated to the arenas, so the mod owns everything about players there: their position, game
 mode, inventory and health. There is no saving and restoring of survival inventories.
@@ -39,8 +39,8 @@ Each match runs on one arena map that supports its mode and isn't in use. One fl
    If the queue falls below the minimum, it goes back to waiting. A sound and a chat line mark 10, 5, 3, 2, 1.
 3. **Starting**: players are teleported to their spawns, put in adventure mode, healed, given a round reset
    (`VisRound.reset`), and frozen for 3 s while a title counts down ("3", "2", "1", "Fight!").
-4. **Playing**: the mode keeps score. A sidebar shows the scores; a boss bar shows the time left (or, in Core Siege,
-   the cores' hit points).
+4. **Playing**: the mode keeps score. A sidebar shows the scores; a boss bar shows the time left (and, in Core Siege,
+   a second one the core's health).
 5. **Ended**: a title shows the winner to everyone in the match, with a chat summary (scores and top players). After
    10 s everyone goes back to the lobby with a round reset, and the map is free again.
 
@@ -65,10 +65,10 @@ Falling below the map's floor height counts as a death (void arenas).
 | FFA | 2–12 | none | first to 15 kills; else most kills | 8 min |
 | TDM | 4–12 | 2, balanced | first team to 30 kills; else most | 10 min |
 | 1v1 | 2 | none | first to 3 rounds | 2 min per round |
-| Core Siege | 4–12 | 2, balanced | enemy core destroyed; else most core HP | 12 min |
+| Core Siege | 4–12 | 2, balanced | broke the core faster; else more damage | 4 min per half |
 
-All numbers are config. Ties: FFA and TDM go to sudden death (next kill wins, 60 s, then a draw); Core Siege compares
-team kills, then draws.
+All numbers are config. Ties: FFA and TDM go to sudden death (next kill wins, 60 s,
+then a draw); Core Siege has none (see below).
 
 **1v1 rounds.** Each round starts with both players refreshed and frozen on the two spawns farthest apart. A downed
 player watches the rest of the round as a spectator (and can't affect anything); the one left standing takes it. When a
@@ -80,9 +80,24 @@ countdown starts. First to 3 rounds wins; after 9 rounds (drawn ones count) the 
 after, with friendly fire off and name tags shown to the team only. Players are dealt into teams by queue order,
 alternating; parties are a later idea.
 
-**Core Siege.** Each team's core is a zone (a box) set on the map, with hit points (default 1000). Every second, if the
-zone holds attackers and no defenders, the core loses 10 HP per attacker (up to 3). Defenders inside stop the drain
-("contested"), shown on the boss bar. The cores' HP are the two boss bars.
+**Core Siege.** Two halves on one core. In the first, red attacks and blue defends; in the second they swap.
+
+- **The core** is a vanilla shulker (no AI, glowing, in the defenders' colour, on the defending team) standing in the
+  map's core zone. It can't be moved or killed: hits on it become damage to the core's own health (`coreHealth`, 400),
+  shown on its own boss bar. Defenders' abilities pass it by (it's their ally, through Vis Mod's ally check).
+- **Shielded while defended**: while any defender stands in the core zone, the core takes no damage. Attackers must
+  clear or pull the defenders out, then burst it while it's exposed. The action bar tells each side which.
+- **Shockwaves**: as it falls past 75%, 50% and 25%, the core blasts attackers near it away and is immune for 2 s.
+- **Regeneration**: with no attacker near the zone for 10 s, the core heals slowly (1% a second), but never back past
+  the last shockwave mark it fell below.
+- **Home advantage**: defenders near their core regain Vis faster (2 a second).
+- **Respawning**: a downed player watches as a spectator for a fixed delay (5 s, each side its own setting), then
+  respawns at their side's spawns.
+- **A half ends** when the core breaks or its time (4 min) runs out. The attackers' score is their time to break it,
+  or, if the defenders held, the share of the core's health they took.
+- **Winning**: a team that broke the core beats one that didn't; if both did, the faster one; if neither, the one that
+  did more damage; level is a draw. The second half ends early once it's settled: when the second attackers pass the
+  first team's time without breaking it, or pass their damage when the first team didn't break it.
 
 ## Maps
 
@@ -91,7 +106,8 @@ An arena map is a named area in the world with:
 - **Modes** it supports.
 - **Spawns**: points with a facing, either free (FFA, Duel) or per team (red, blue).
 - **Floor height**: below it is a void death.
-- **Cores** (Core Siege only): one box per team.
+- **Core zone** (Core Siege only): a box; the core stands on its floor, in the middle. Core Siege uses its own
+  spawns, marked as attacker or defender spawns.
 - **Bounds** (optional): leaving them counts as a death.
 
 Maps are built by hand in the world and marked with operator commands; they are stored in the world's SavedData. A map
@@ -108,8 +124,9 @@ All `/arena` commands need operator level 2.
 - `/arena map create <name>` (in the dimension you're in), `/arena map delete <name>`, `/arena map list` (each map's
   modes, green when ready).
 - `/arena map <name> mode add|remove <mode>` (modes: `ffa`, `tdm`, `duel`, `core_siege`).
-- `/arena map <name> spawn add [red|blue]` (where you stand and your facing), `/arena map <name> spawn clear`.
-- `/arena map <name> floor <y|none>`, `/arena map <name> core <red|blue> <from> <to>`.
+- `/arena map <name> spawn add [red|blue|attack|defend]` (where you stand and your facing; plain spawns are for FFA
+  and 1v1, red and blue for TDM, attack and defend for Core Siege), `/arena map <name> spawn clear`.
+- `/arena map <name> floor <y|none>`, `/arena map <name> core <from> <to>` (the core zone), `core clear`.
 - `/arena map <name> check` (everything marked, and what each mode still needs), `/arena map <name> tp` (to its first
   spawn).
 - `/arena start <mode> [map]`: start a match now from that mode's queue (for testing with few players).
@@ -121,16 +138,18 @@ All vanilla, so players need nothing:
 
 - **Sidebar**: mode name, time left and the top scores. Sent with vanilla scoreboard packets to that match's players
   only, so two matches at once each see their own.
-- **Boss bar**: time left, or the cores' HP in Core Siege.
+- **Boss bar**: time left; in Core Siege a second bar shows the core's health and whether it's shielded.
 - **Titles**: countdown, "Fight!", kills ("You eliminated X"), the winner.
-- **Action bar**: your kills and deaths in FFA/TDM; "Contesting the core" in Core Siege.
+- **Action bar**: your kills and deaths in FFA/TDM; "Core shielded" or "Core exposed" in Core Siege.
 - **Lobby**: the menu item, and a chat line when a queue starts counting down.
 
 ## Config
 
 A COMMON config, `config/visarena-common.toml`: countdown times, freeze time, spawn protection, the end screen time,
-and each mode's player counts, score limit and time limit. Core Siege: core HP, drain per attacker, attacker cap,
-respawn delay.
+and each mode's player counts, score limit and time limit (per round in 1v1, per half in Core Siege). Core Siege: core
+health and a damage multiplier, respawn delay per side, regeneration delay and rate, shockwave radius, strength and
+immunity, and the defenders' Vis bonus and its radius. Characters are locked during matches (Vis Mod's
+`CharacterChangeEvent` is refused), so a player must have one before they can queue.
 
 ## Milestones
 
@@ -140,7 +159,8 @@ respawn delay.
    lobby; FFA scoring; sidebar, boss bar and titles; `/arena start` and `/arena stop`.
 3. **TDM.** Match teams, balancing, team spawns, team scores.
 4. **1v1.** Rounds, spectating the rest of a round, best of N.
-5. **Core Siege.** Core zones, HP and draining, contesting, its boss bars and win rules.
+5. **Core Siege.** Halves on one core, the core entity and its health, shielding, shockwaves, regeneration, the Vis
+   bonus, timed respawns, its boss bar and win rules.
 6. **Polish.** Stats (wins, kills) kept per player, a leaderboard in the menu, map voting. Maps: pick the least
    recently played free map (random among ties) rather than any at random, and have the menu say "Waiting for a free
    map" when every map for a full queue is in use.

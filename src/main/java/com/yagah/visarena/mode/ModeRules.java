@@ -3,10 +3,12 @@ package com.yagah.visarena.mode;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 
 import com.yagah.visarena.map.Spot;
+import com.yagah.visarena.match.Fighter;
 import com.yagah.visarena.match.Match;
 
 import net.minecraft.network.chat.Component;
@@ -33,9 +35,39 @@ public interface ModeRules {
         return false;
     }
 
+    /** What a round is called on screen ("Round", or "Half" in Core Siege). */
+    default String roundName() {
+        return "Round";
+    }
+
+    /** The subtitle under a finished round's headline; empty for each fighter's rounds won. */
+    default Optional<Component> roundSubtitle(Match match) {
+        return Optional.empty();
+    }
+
     /** For round modes: the round's result once it's over, else empty. When its time is up, always a result. */
     default Optional<RoundEnd> roundOver(Match match, boolean timeUp) {
         return Optional.empty();
+    }
+
+    /**
+     * How long a downed fighter waits, as a spectator, before respawning: 0 for at once (the default), or empty to sit
+     * out the rest of the round (round modes such as 1v1).
+     */
+    default OptionalInt respawnDelay(Match match, Fighter fighter) {
+        return OptionalInt.of(0);
+    }
+
+    /** Called as each round's countdown begins (the only one, outside round modes), after everyone is placed. */
+    default void roundStarted(Match match) {
+    }
+
+    /** Called every tick while the fight is on, for a mode's own goings-on. */
+    default void tick(Match match) {
+    }
+
+    /** Called once as the match finishes, to clean up anything the mode made. */
+    default void finished(Match match) {
     }
 
     /** Each fighter's first spawn (and, in round modes, their spawn each round). */

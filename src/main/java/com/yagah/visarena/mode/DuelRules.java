@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,10 +34,16 @@ public final class DuelRules implements ModeRules {
         return true;
     }
 
+    /** A downed fighter sits out the rest of the round. */
+    @Override
+    public OptionalInt respawnDelay(Match match, Fighter fighter) {
+        return OptionalInt.empty();
+    }
+
     /** The spawns, shuffled, one each (the two farthest apart if there are more). */
     @Override
     public Map<UUID, Spot> startSpots(Match match) {
-        List<ArenaMap.Spawn> spawns = new ArrayList<>(match.map().spawns());
+        List<ArenaMap.Spawn> spawns = new ArrayList<>(match.map().openSpawns());
         Collections.shuffle(spawns);
         List<Spot> picked = farthestPair(spawns);
         Map<UUID, Spot> spots = new HashMap<>();
@@ -51,7 +58,7 @@ public final class DuelRules implements ModeRules {
     @Override
     public Spot respawnSpot(Match match, ServerPlayer player) {
         List<ServerPlayer> others = match.online().stream().filter(other -> other != player).toList();
-        return match.map().spawns().stream()
+        return match.map().openSpawns().stream()
                 .max(Comparator.comparingDouble(spawn -> others.stream()
                         .mapToDouble(other -> other.position().distanceToSqr(spawn.spot().pos()))
                         .min().orElse(0)))

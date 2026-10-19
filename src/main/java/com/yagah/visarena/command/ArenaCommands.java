@@ -16,6 +16,7 @@ import com.yagah.visarena.VisArena;
 import com.yagah.visarena.lobby.Lobby;
 import com.yagah.visarena.map.ArenaData;
 import com.yagah.visarena.map.ArenaMap;
+import com.yagah.visarena.map.SiegeSide;
 import com.yagah.visarena.map.Spot;
 import com.yagah.visarena.map.TeamColor;
 import com.yagah.visarena.match.Matches;
@@ -74,17 +75,21 @@ public final class ArenaCommands {
                                         .then(Commands.literal("remove").then(modeArgument().executes(ctx -> setMode(ctx, false)))))
                                 .then(Commands.literal("spawn")
                                         .then(Commands.literal("add")
-                                                .executes(ctx -> addSpawn(ctx, Optional.empty()))
-                                                .then(Commands.literal("red").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.RED))))
-                                                .then(Commands.literal("blue").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.BLUE)))))
+                                                .executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.empty()))
+                                                .then(Commands.literal("red").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.RED), Optional.empty())))
+                                                .then(Commands.literal("blue").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.BLUE), Optional.empty())))
+                                                .then(Commands.literal("attack").executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.of(SiegeSide.ATTACK))))
+                                                .then(Commands.literal("defend").executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.of(SiegeSide.DEFEND)))))
                                         .then(Commands.literal("clear").executes(ArenaCommands::clearSpawns)))
                                 .then(Commands.literal("floor")
                                         .then(Commands.literal("none").executes(ctx -> setFloor(ctx, Optional.empty())))
                                         .then(Commands.argument("y", IntegerArgumentType.integer(-2048, 2048))
                                                 .executes(ctx -> setFloor(ctx, Optional.of(IntegerArgumentType.getInteger(ctx, "y"))))))
                                 .then(Commands.literal("core")
-                                        .then(coreArgument(TeamColor.RED))
-                                        .then(coreArgument(TeamColor.BLUE)))
+                                        .then(Commands.literal("clear").executes(ArenaCommands::clearCore))
+                                        .then(Commands.argument("from", BlockPosArgument.blockPos())
+                                                .then(Commands.argument("to", BlockPosArgument.blockPos())
+                                                        .executes(ArenaCommands::setCore))))
                                 .then(Commands.literal("tp").executes(ArenaCommands::teleportToMap)))));
     }
 
@@ -97,13 +102,6 @@ public final class ArenaCommands {
     private static ArgumentBuilder<CommandSourceStack, ?> modeArgument() {
         return Commands.argument("mode", StringArgumentType.word())
                 .suggests((ctx, builder) -> SharedSuggestionProvider.suggest(Arrays.stream(ArenaMode.values()).map(ArenaMode::id), builder));
-    }
-
-    private static ArgumentBuilder<CommandSourceStack, ?> coreArgument(TeamColor team) {
-        return Commands.literal(team.id())
-                .then(Commands.argument("from", BlockPosArgument.blockPos())
-                        .then(Commands.argument("to", BlockPosArgument.blockPos())
-                                .executes(ctx -> setCore(ctx, team))));
     }
 
     private static String modeIds() {
@@ -221,17 +219,19 @@ public final class ArenaCommands {
 
     private static int checkMap(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ArenaMap map = map(ctx);
-        long free = map.spawns().stream().filter(spawn -> spawn.team().isEmpty()).count();
+        long free = map.spawns().stream().filter(spawn -> spawn.team().isEmpty() && spawn.side().isEmpty()).count();
         MutableComponent text = Component.literal("Map " + map.name()).withStyle(ChatFormatting.GOLD)
                 .append(Component.literal(" (" + map.dimension().location() + ")").withStyle(ChatFormatting.GRAY))
                 .append(Component.literal("\n Spawns: " + free + " free"));
         for (TeamColor team : TeamColor.values()) {
-            long count = map.spawns().stream().filter(spawn -> spawn.team().equals(Optional.of(team))).count();
-            text.append(Component.literal(", " + count + " " + team.id()).withStyle(team.color()));
+            text.append(Component.literal(", " + map.teamSpawns(team).size() + " " + team.id()).withStyle(team.color()));
+        }
+        for (SiegeSide side : SiegeSide.values()) {
+            text.append(Component.literal(", " + map.siegeSpawns(side).size() + " " + side.id()));
         }
         text.append(Component.literal("\n Floor: " + map.floor().map(String::valueOf).orElse("none")));
-        text.append(Component.literal("\n Cores: " + (map.cores().isEmpty() ? "none"
-                : map.cores().keySet().stream().map(TeamColor::id).collect(Collectors.joining(", ")))));
+        text.append(Component.literal("\n Core zone: " + map.core().map(box -> box.getXSpan() + "x" + box.getYSpan() + "x"
+                + box.getZSpan() + " at " + box.minX() + " " + box.minY() + " " + box.minZ()).orElse("none")));
         if (map.modes().isEmpty()) {
             text.append(Component.literal("\n No modes yet: /arena map " + map.name() + " mode add <mode>").withStyle(ChatFormatting.RED));
         }
@@ -256,12 +256,14 @@ public final class ArenaCommands {
         return changed ? Command.SINGLE_SUCCESS : 0;
     }
 
-    private static int addSpawn(CommandContext<CommandSourceStack> ctx, Optional<TeamColor> team) throws CommandSyntaxException {
+    private static int addSpawn(CommandContext<CommandSourceStack> ctx, Optional<TeamColor> team, Optional<SiegeSide> side)
+            throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ArenaMap map = mapHere(ctx);
-        map.spawns().add(new ArenaMap.Spawn(Spot.of(player), team));
+        map.spawns().add(new ArenaMap.Spawn(Spot.of(player), team, side));
         saved(ctx);
-        success(ctx, "Added a " + team.map(t -> t.id() + " ").orElse("") + "spawn to " + map.name()
+        String kind = team.map(TeamColor::id).or(() -> side.map(SiegeSide::id)).map(id -> id + " ").orElse("");
+        success(ctx, "Added " + (kind.startsWith("a") ? "an " : "a ") + kind + "spawn to " + map.name()
                 + " (" + map.spawns().size() + " in all)");
         return Command.SINGLE_SUCCESS;
     }
@@ -284,12 +286,21 @@ public final class ArenaCommands {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int setCore(CommandContext<CommandSourceStack> ctx, TeamColor team) throws CommandSyntaxException {
+    private static int setCore(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ArenaMap map = mapHere(ctx);
         BoundingBox box = BoundingBox.fromCorners(BlockPosArgument.getLoadedBlockPos(ctx, "from"), BlockPosArgument.getLoadedBlockPos(ctx, "to"));
-        map.cores().put(team, box);
+        map.setCore(Optional.of(box));
         saved(ctx);
-        success(ctx, "Set the " + team.id() + " core of " + map.name() + " (" + box.getXSpan() + "x" + box.getYSpan() + "x" + box.getZSpan() + " blocks)");
+        success(ctx, "Set the core zone of " + map.name() + " (" + box.getXSpan() + "x" + box.getYSpan() + "x" + box.getZSpan()
+                + " blocks; the core stands in the middle of its floor)");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int clearCore(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ArenaMap map = map(ctx);
+        map.setCore(Optional.empty());
+        saved(ctx);
+        success(ctx, "Removed the core zone of " + map.name());
         return Command.SINGLE_SUCCESS;
     }
 

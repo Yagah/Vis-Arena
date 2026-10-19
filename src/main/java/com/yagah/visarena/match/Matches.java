@@ -7,11 +7,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.yagah.vismod.team.CharacterChangeEvent;
 import com.yagah.vismod.team.VisAllies;
 import com.yagah.visarena.VisArena;
 import com.yagah.visarena.map.ArenaMap;
 import com.yagah.visarena.mode.ArenaMode;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -118,6 +121,14 @@ public final class Matches {
             event.setCanceled(true);
             victim.setHealth(victim.getMaxHealth());
             match.died(victim, event.getSource());
+        }
+    }
+
+    /** Characters are locked for the whole match, in every mode; they can be changed in the lobby. */
+    @SubscribeEvent
+    static void onCharacterChange(CharacterChangeEvent event) {
+        if (inMatch(event.getEntity())) {
+            event.refuse(Component.literal("You can only change character in the lobby").withStyle(ChatFormatting.RED));
         }
     }
 

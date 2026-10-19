@@ -29,7 +29,7 @@ public final class FfaRules implements ModeRules {
 
     @Override
     public Map<UUID, Spot> startSpots(Match match) {
-        List<ArenaMap.Spawn> spawns = new ArrayList<>(match.map().spawns());
+        List<ArenaMap.Spawn> spawns = new ArrayList<>(match.map().openSpawns());
         Collections.shuffle(spawns);
         Map<UUID, Spot> spots = new HashMap<>();
         int i = 0;
@@ -43,7 +43,7 @@ public final class FfaRules implements ModeRules {
     @Override
     public Spot respawnSpot(Match match, ServerPlayer player) {
         List<ServerPlayer> others = match.online().stream().filter(other -> other != player && other.isAlive()).toList();
-        return match.map().spawns().stream()
+        return match.map().openSpawns().stream()
                 .max(Comparator.comparingDouble(spawn -> others.stream()
                         .mapToDouble(other -> other.position().distanceToSqr(spawn.spot().pos()))
                         .min().orElse(0)))

@@ -13,7 +13,7 @@ public enum ArenaMode {
     FFA("ffa", "FFA", "Everyone for themselves. Most kills wins.", Items.IRON_SWORD, false, false, 2, 12, 15, 480),
     TDM("tdm", "Team Deathmatch", "Two teams. Most team kills wins.", Items.SHIELD, true, false, 4, 12, 30, 600),
     DUEL("duel", "1v1", "Two players, best of five rounds.", Items.GOLDEN_SWORD, false, false, 2, 2, 3, 120),
-    CORE_SIEGE("core_siege", "Core Siege", "Two teams. Drain the enemy core, defend yours.", Items.BEACON, true, true, 4, 12, 1000, 720);
+    CORE_SIEGE("core_siege", "Core Siege", "Two halves: break the core faster than they did.", Items.BEACON, true, true, 4, 12, 1, 240);
 
     private final String id;
     private final String displayName;
@@ -83,7 +83,7 @@ public enum ArenaMode {
     }
 
     /** How each built mode makes the rules for a new match; the others are still to come. */
-    private static final Map<ArenaMode, Supplier<ModeRules>> RULES = Map.of(FFA, FfaRules::new, TDM, TdmRules::new, DUEL, DuelRules::new);
+    private static final Map<ArenaMode, Supplier<ModeRules>> RULES = Map.of(FFA, FfaRules::new, TDM, TdmRules::new, DUEL, DuelRules::new, CORE_SIEGE, SiegeRules::new);
 
     /** The rules for a new match, or empty while the mode is still to come. */
     public Optional<ModeRules> rules() {

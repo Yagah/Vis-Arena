@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import com.yagah.vismod.vis.CharacterSwitch;
 import com.yagah.visarena.ArenaConfig;
 import com.yagah.visarena.map.ArenaData;
 import com.yagah.visarena.match.Queues;
@@ -105,6 +106,11 @@ public final class ModeMenu {
             ArenaMode mode = ArenaMode.values()[i];
             if (!mode.playable()) {
                 player.displayClientMessage(Component.literal(mode.displayName() + " is coming soon").withStyle(ChatFormatting.YELLOW), true);
+                return;
+            }
+            // Characters are locked once a match starts, so pick one first.
+            if (!CharacterSwitch.hasCharacter(player) && Queues.queuedFor(player.getUUID()).isEmpty()) {
+                player.displayClientMessage(Component.literal("Choose a Vis character first (press K)").withStyle(ChatFormatting.RED), true);
                 return;
             }
             boolean joined = Queues.toggle(player, mode);

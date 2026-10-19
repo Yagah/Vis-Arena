@@ -115,7 +115,7 @@ public final class TdmRules implements ModeRules {
     }
 
     private static List<ArenaMap.Spawn> spawns(Match match, TeamColor team) {
-        return match.map().spawns().stream().filter(spawn -> spawn.team().equals(Optional.of(team))).toList();
+        return match.map().teamSpawns(team);
     }
 
     private static List<Fighter> members(Match match, TeamColor team) {

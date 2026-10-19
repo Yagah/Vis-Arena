@@ -1,10 +1,8 @@
 package com.yagah.visarena.map;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -19,14 +17,18 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
 /**
  * An arena: a place built by hand in one dimension, marked with /arena map commands. It lists the modes it hosts, its
- * spawns (free, or for one team), the height below which a player has fallen out, and Core Siege's core zones.
+ * spawns, the height below which a player has fallen out, and Core Siege's core zone.
  */
 public final class ArenaMap {
-    /** A spawn point; with a team, only that team spawns there. */
-    public record Spawn(Spot spot, Optional<TeamColor> team) {
+    /**
+     * A spawn point. Plain ones (and team ones) serve FFA and 1v1; one with a team serves only that team in TDM; one
+     * with a siege side serves only that side in Core Siege.
+     */
+    public record Spawn(Spot spot, Optional<TeamColor> team, Optional<SiegeSide> side) {
         public static final Codec<Spawn> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Spot.CODEC.fieldOf("spot").forGetter(Spawn::spot),
-                TeamColor.CODEC.optionalFieldOf("team").forGetter(Spawn::team)
+                TeamColor.CODEC.optionalFieldOf("team").forGetter(Spawn::team),
+                SiegeSide.CODEC.optionalFieldOf("side").forGetter(Spawn::side)
         ).apply(instance, Spawn::new));
     }
 
@@ -39,7 +41,7 @@ public final class ArenaMap {
             MODE_CODEC.listOf().fieldOf("modes").forGetter(map -> List.copyOf(map.modes)),
             Spawn.CODEC.listOf().fieldOf("spawns").forGetter(map -> map.spawns),
             Codec.INT.optionalFieldOf("floor").forGetter(map -> map.floor),
-            Codec.unboundedMap(TeamColor.CODEC, BoundingBox.CODEC).fieldOf("cores").forGetter(map -> map.cores)
+            BoundingBox.CODEC.optionalFieldOf("core").forGetter(map -> map.core)
     ).apply(instance, ArenaMap::new));
 
     private final String name;
@@ -47,20 +49,20 @@ public final class ArenaMap {
     private final Set<ArenaMode> modes = EnumSet.noneOf(ArenaMode.class);
     private final List<Spawn> spawns;
     private Optional<Integer> floor;
-    private final Map<TeamColor, BoundingBox> cores = new EnumMap<>(TeamColor.class);
+    private Optional<BoundingBox> core;
 
     public ArenaMap(String name, ResourceKey<Level> dimension) {
-        this(name, dimension, List.of(), List.of(), Optional.empty(), Map.of());
+        this(name, dimension, List.of(), List.of(), Optional.empty(), Optional.empty());
     }
 
     private ArenaMap(String name, ResourceKey<Level> dimension, List<ArenaMode> modes, List<Spawn> spawns,
-            Optional<Integer> floor, Map<TeamColor, BoundingBox> cores) {
+            Optional<Integer> floor, Optional<BoundingBox> core) {
         this.name = name;
         this.dimension = dimension;
         this.modes.addAll(modes);
         this.spawns = new ArrayList<>(spawns);
         this.floor = floor;
-        this.cores.putAll(cores);
+        this.core = core;
     }
 
     public String name() {
@@ -79,6 +81,19 @@ public final class ArenaMap {
         return spawns;
     }
 
+    /** The spawns FFA and 1v1 use: all but Core Siege's. */
+    public List<Spawn> openSpawns() {
+        return spawns.stream().filter(spawn -> spawn.side().isEmpty()).toList();
+    }
+
+    public List<Spawn> teamSpawns(TeamColor team) {
+        return spawns.stream().filter(spawn -> spawn.team().equals(Optional.of(team))).toList();
+    }
+
+    public List<Spawn> siegeSpawns(SiegeSide side) {
+        return spawns.stream().filter(spawn -> spawn.side().equals(Optional.of(side))).toList();
+    }
+
     public Optional<Integer> floor() {
         return floor;
     }
@@ -87,28 +102,35 @@ public final class ArenaMap {
         this.floor = floor;
     }
 
-    public Map<TeamColor, BoundingBox> cores() {
-        return cores;
+    /** Core Siege's core zone: the core stands in the middle of its floor. */
+    public Optional<BoundingBox> core() {
+        return core;
+    }
+
+    public void setCore(Optional<BoundingBox> core) {
+        this.core = core;
     }
 
     /** What this map still lacks to host the mode; empty once it is ready. */
     public List<String> missing(ArenaMode mode) {
         List<String> missing = new ArrayList<>();
-        if (mode.teams()) {
+        if (mode.cores()) {
+            if (core.isEmpty()) {
+                missing.add("a core zone");
+            }
+            for (SiegeSide side : SiegeSide.values()) {
+                if (siegeSpawns(side).isEmpty()) {
+                    missing.add("an " + side.id() + " spawn");
+                }
+            }
+        } else if (mode.teams()) {
             for (TeamColor team : TeamColor.values()) {
-                if (spawns.stream().noneMatch(spawn -> spawn.team().equals(Optional.of(team)))) {
+                if (teamSpawns(team).isEmpty()) {
                     missing.add("a " + team.id() + " spawn");
                 }
             }
-        } else if (spawns.size() < 2) {
-            missing.add((2 - spawns.size()) + " more spawn(s)");
-        }
-        if (mode.cores()) {
-            for (TeamColor team : TeamColor.values()) {
-                if (!cores.containsKey(team)) {
-                    missing.add("a " + team.id() + " core");
-                }
-            }
+        } else if (openSpawns().size() < 2) {
+            missing.add((2 - openSpawns().size()) + " more spawn(s)");
         }
         return missing;
     }

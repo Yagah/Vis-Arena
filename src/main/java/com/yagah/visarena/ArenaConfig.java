@@ -67,7 +67,8 @@ public final class ArenaConfig {
                     .comment("Most players in one " + mode.displayName() + " match.")
                     .defineInRange("maxPlayers", mode.defaultMax(), 2, 64);
             ModConfigSpec.IntValue scoreLimit = BUILDER
-                    .comment("Score that wins a " + mode.displayName() + " match outright (kills, team kills or rounds).")
+                    .comment(mode == ArenaMode.CORE_SIEGE ? "Not used: Core Siege is won on time and damage (see [core_siege_rules])."
+                            : "Score that wins a " + mode.displayName() + " match outright (kills, team kills or rounds).")
                     .defineInRange("scoreLimit", mode.defaultScoreLimit(), 1, 1000);
             ModConfigSpec.IntValue timeLimit = BUILDER
                     .comment("Seconds a " + mode.displayName() + " match (or round) lasts.")
@@ -75,6 +76,54 @@ public final class ArenaConfig {
             MODES.put(mode, new ModeSettings(min, max, scoreLimit, timeLimit));
             BUILDER.pop();
         }
+    }
+
+    static {
+        BUILDER.push("core_siege_rules");
+    }
+
+    public static final ModConfigSpec.IntValue CORE_HEALTH = BUILDER
+            .comment("The core's health each half.")
+            .defineInRange("coreHealth", 400, 1, 100000);
+
+    public static final ModConfigSpec.DoubleValue CORE_DAMAGE_MULTIPLIER = BUILDER
+            .comment("Each hit on the core deals its damage times this.")
+            .defineInRange("coreDamageMultiplier", 1.0, 0.01, 100.0);
+
+    public static final ModConfigSpec.IntValue ATTACKER_RESPAWN_SECONDS = BUILDER
+            .comment("Seconds a downed attacker waits (spectating) before respawning.")
+            .defineInRange("attackerRespawnSeconds", 5, 0, 120);
+
+    public static final ModConfigSpec.IntValue DEFENDER_RESPAWN_SECONDS = BUILDER
+            .comment("Seconds a downed defender waits (spectating) before respawning.")
+            .defineInRange("defenderRespawnSeconds", 5, 0, 120);
+
+    public static final ModConfigSpec.IntValue REGEN_DELAY_SECONDS = BUILDER
+            .comment("Seconds with no attacker near the core zone before the core starts to heal.")
+            .defineInRange("regenDelaySeconds", 10, 1, 600);
+
+    public static final ModConfigSpec.DoubleValue REGEN_PERCENT_PER_SECOND = BUILDER
+            .comment("How fast the core heals, in percent of its health per second (never past its last shockwave mark).")
+            .defineInRange("regenPercentPerSecond", 1.0, 0.0, 100.0);
+
+    public static final ModConfigSpec.DoubleValue NEAR_RADIUS = BUILDER
+            .comment("Blocks around the core zone that count as near it (for regeneration, shockwaves and the Vis bonus).")
+            .defineInRange("nearRadius", 8.0, 0.0, 64.0);
+
+    public static final ModConfigSpec.DoubleValue SHOCKWAVE_STRENGTH = BUILDER
+            .comment("How hard the core's shockwave (at 75%, 50% and 25% health) throws nearby attackers.")
+            .defineInRange("shockwaveStrength", 1.6, 0.0, 10.0);
+
+    public static final ModConfigSpec.IntValue SHOCKWAVE_IMMUNITY_SECONDS = BUILDER
+            .comment("Seconds the core can't be hurt after a shockwave.")
+            .defineInRange("shockwaveImmunitySeconds", 2, 0, 60);
+
+    public static final ModConfigSpec.DoubleValue DEFENDER_VIS_PER_SECOND = BUILDER
+            .comment("Extra Vis per second for defenders near their core.")
+            .defineInRange("defenderVisPerSecond", 2.0, 0.0, 100.0);
+
+    static {
+        BUILDER.pop();
     }
 
     public static final ModConfigSpec SPEC = BUILDER.build();

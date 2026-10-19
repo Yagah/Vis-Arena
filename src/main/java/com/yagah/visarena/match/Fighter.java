@@ -18,6 +18,8 @@ public final class Fighter {
     /** In round modes: rounds won, and whether they're out (downed) until the next round. */
     private int roundsWon;
     private boolean out;
+    /** The match tick a fighter waiting out a respawn delay comes back, or 0. */
+    private int respawnAt;
 
     Fighter(UUID id, String name) {
         this.id = id;
@@ -77,6 +79,14 @@ public final class Fighter {
 
     void setOut(boolean out) {
         this.out = out;
+    }
+
+    int respawnAt() {
+        return respawnAt;
+    }
+
+    void setRespawnAt(int tick) {
+        respawnAt = tick;
     }
 
     void setProtectedUntil(int tick) {
