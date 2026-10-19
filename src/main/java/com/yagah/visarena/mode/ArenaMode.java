@@ -1,7 +1,9 @@
 package com.yagah.visarena.mode;
 
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
@@ -80,17 +82,17 @@ public enum ArenaMode {
         return defaultTimeLimitSeconds;
     }
 
+    /** How each built mode makes the rules for a new match; the others are still to come. */
+    private static final Map<ArenaMode, Supplier<ModeRules>> RULES = Map.of(FFA, FfaRules::new);
+
     /** The rules for a new match, or empty while the mode is still to come. */
     public Optional<ModeRules> rules() {
-        return switch (this) {
-            case FFA -> Optional.of(new FfaRules());
-            default -> Optional.empty();
-        };
+        return Optional.ofNullable(RULES.get(this)).map(Supplier::get);
     }
 
-    /** True once the mode can be played. */
+    /** True once the mode can be played (checked every tick, so it makes nothing). */
     public boolean playable() {
-        return rules().isPresent();
+        return RULES.containsKey(this);
     }
 
     public static Optional<ArenaMode> byId(String id) {

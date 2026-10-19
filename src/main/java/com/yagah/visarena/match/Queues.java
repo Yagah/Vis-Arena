@@ -77,6 +77,11 @@ public final class Queues {
         COUNTDOWNS.clear();
     }
 
+    /** True if some map that hosts the mode is free. Checked every tick while a queue is ready, so it copies nothing. */
+    private static boolean hasFreeMap(MinecraftServer server, ArenaMode mode) {
+        return ArenaData.get(server).maps().stream().anyMatch(map -> map.hosts(mode) && !Matches.inUse(map));
+    }
+
     /** A free map that hosts the mode, picked at random among them. */
     public static Optional<ArenaMap> freeMap(MinecraftServer server, ArenaMode mode) {
         List<ArenaMap> free = new ArrayList<>(ArenaData.get(server).maps().stream()
@@ -106,7 +111,7 @@ public final class Queues {
     private static boolean tick(MinecraftServer server, ArenaMode mode) {
         List<ServerPlayer> waiting = waiting(server, mode);
         Integer ticks = COUNTDOWNS.get(mode);
-        boolean ready = mode.playable() && waiting.size() >= ArenaConfig.minPlayers(mode) && freeMap(server, mode).isPresent();
+        boolean ready = mode.playable() && waiting.size() >= ArenaConfig.minPlayers(mode) && hasFreeMap(server, mode);
         if (!ready) {
             if (ticks != null) {
                 COUNTDOWNS.remove(mode);

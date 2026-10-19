@@ -1,6 +1,6 @@
 package com.yagah.visarena.lobby;
 
-import com.yagah.vismod.team.VisRound;
+import com.yagah.visarena.Players;
 import com.yagah.visarena.VisArena;
 import com.yagah.visarena.map.ArenaData;
 import com.yagah.visarena.match.Matches;
@@ -69,15 +69,9 @@ public final class Lobby {
                 player.teleportTo(level, lobby.spot().pos().x, lobby.spot().pos().y, lobby.spot().pos().z, lobby.spot().yaw(), lobby.spot().pitch());
             }
         });
-        player.setGameMode(GameType.ADVENTURE);
-        player.removeAllEffects();
-        player.setHealth(player.getMaxHealth());
-        player.getFoodData().setFoodLevel(20);
-        player.getFoodData().setSaturation(5);
-        player.getInventory().clearContent();
+        Players.refresh(player);
         player.getInventory().setItem(MENU_SLOT, MenuItem.create());
         player.containerMenu.broadcastChanges();
-        VisRound.reset(player);
     }
 
     /** The menu item in the first slot and nowhere else, and adventure mode. */

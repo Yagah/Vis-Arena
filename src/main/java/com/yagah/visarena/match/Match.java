@@ -12,8 +12,8 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 
 import com.yagah.vismod.team.VisAllies;
-import com.yagah.vismod.team.VisRound;
 import com.yagah.visarena.ArenaConfig;
+import com.yagah.visarena.Players;
 import com.yagah.visarena.VisArena;
 import com.yagah.visarena.hud.Sidebar;
 import com.yagah.visarena.hud.Titles;
@@ -37,8 +37,6 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.level.GameType;
-import net.minecraft.world.phys.Vec3;
 
 /**
  * One match on one map: the same flow for every mode. Starting (players frozen at their spawns), playing (the mode's
@@ -122,7 +120,7 @@ public final class Match {
         Map<UUID, Spot> spots = rules.startSpots(this);
         for (ServerPlayer player : online()) {
             Spot spot = spots.get(player.getUUID());
-            refresh(player);
+            Players.refresh(player);
             place(player, spot);
             freeze(player, spot);
             bossBar.addPlayer(player);
@@ -281,7 +279,7 @@ public final class Match {
         if (state != State.PLAYING) {
             // Only something unstoppable (the void, /kill) gets here: put them back.
             Spot spot = frozenAt.getOrDefault(victim.getUUID(), rules.respawnSpot(this, victim));
-            refresh(victim);
+            Players.refresh(victim);
             place(victim, spot);
             return;
         }
@@ -302,7 +300,7 @@ public final class Match {
         });
         Titles.show(victim, Component.literal("Eliminated").withStyle(ChatFormatting.RED),
                 killer.map(k -> Component.literal("by " + k.name())).orElse(Component.empty()), 30);
-        refresh(victim);
+        Players.refresh(victim);
         place(victim, rules.respawnSpot(this, victim));
         fighter.setProtectedUntil(tick + ArenaConfig.ticks(ArenaConfig.SPAWN_PROTECTION_SECONDS));
         updateHud();
@@ -319,20 +317,6 @@ public final class Match {
     }
 
     // ---- Players ----
-
-    /** Ready to fight: healed, fed, nothing held, no effects or fire, adventure mode, and a Vis round reset. */
-    private static void refresh(ServerPlayer player) {
-        player.setGameMode(GameType.ADVENTURE);
-        player.getInventory().clearContent();
-        player.removeAllEffects();
-        player.clearFire();
-        player.setHealth(player.getMaxHealth());
-        player.getFoodData().setFoodLevel(20);
-        player.getFoodData().setSaturation(5);
-        player.fallDistance = 0;
-        player.setDeltaMovement(Vec3.ZERO);
-        VisRound.reset(player);
-    }
 
     private void place(ServerPlayer player, Spot spot) {
         player.teleportTo(level, spot.pos().x, spot.pos().y, spot.pos().z, spot.yaw(), spot.pitch());
