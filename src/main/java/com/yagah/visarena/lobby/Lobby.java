@@ -3,9 +3,11 @@ package com.yagah.visarena.lobby;
 import com.yagah.vismod.team.VisRound;
 import com.yagah.visarena.VisArena;
 import com.yagah.visarena.map.ArenaData;
+import com.yagah.visarena.match.Matches;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -14,6 +16,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -35,9 +38,9 @@ public final class Lobby {
     private Lobby() {
     }
 
-    /** True if the lobby manages this player (everyone but builders). */
+    /** True if the lobby manages this player: everyone but builders and players in a match. */
     public static boolean managed(ServerPlayer player) {
-        return !builder(player);
+        return !builder(player) && !Matches.inMatch(player);
     }
 
     public static boolean builder(ServerPlayer player) {
@@ -147,6 +150,15 @@ public final class Lobby {
         if (MenuItem.is(event.getEntity().getItem()) && event.getPlayer() instanceof ServerPlayer player) {
             event.setCanceled(true);
             keepInPlace(player);
+        }
+    }
+
+    /** Nobody in the lobby can be hurt, except by the void or /kill (which send them back to the lobby spawn). */
+    @SubscribeEvent
+    static void onIncomingDamage(LivingIncomingDamageEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player && managed(player)
+                && !event.getSource().is(DamageTypeTags.BYPASSES_INVULNERABILITY)) {
+            event.setCanceled(true);
         }
     }
 

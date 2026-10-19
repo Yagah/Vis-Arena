@@ -21,6 +21,8 @@ It runs on the server only (see CLAUDE.md, "Server side only").
 - On joining, a player is placed at the lobby spawn in adventure mode, at full health and Vis, with an empty inventory
   except the **Arena menu** item (a nether star named "Arena", in the first hotbar slot). It can't be dropped, moved or
   put in a container, and it comes back if lost.
+- Nobody in the lobby can be hurt (abilities included), except by the void or `/kill`, which respawn them at the lobby
+  spawn.
 - Using the item (right click) opens the **mode menu**: a chest screen with one icon per mode showing its name, how many
   are queued, and the players needed to start. Clicking queues you; clicking again (or the barrier icon) leaves.
   A player is in at most one queue.

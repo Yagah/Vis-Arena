@@ -18,6 +18,8 @@ import com.yagah.visarena.map.ArenaData;
 import com.yagah.visarena.map.ArenaMap;
 import com.yagah.visarena.map.Spot;
 import com.yagah.visarena.map.TeamColor;
+import com.yagah.visarena.match.Matches;
+import com.yagah.visarena.match.Queues;
 import com.yagah.visarena.mode.ArenaMode;
 
 import net.minecraft.ChatFormatting;
@@ -54,6 +56,11 @@ public final class ArenaCommands {
                 .then(Commands.literal("lobby")
                         .then(Commands.literal("set").executes(ArenaCommands::setLobby)))
                 .then(Commands.literal("build").executes(ArenaCommands::toggleBuild))
+                .then(Commands.literal("start")
+                        .then(modeArgument()
+                                .executes(ctx -> startNow(ctx, false))
+                                .then(mapArgument().executes(ctx -> startNow(ctx, true)))))
+                .then(Commands.literal("stop").executes(ArenaCommands::stopAll))
                 .then(Commands.literal("map")
                         .then(Commands.literal("list").executes(ArenaCommands::listMaps))
                         .then(Commands.literal("create")
@@ -132,8 +139,32 @@ public final class ArenaCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    /** Starts a match now from the mode's queue, even short of its fewest players (for testing). */
+    private static int startNow(CommandContext<CommandSourceStack> ctx, boolean withMap) throws CommandSyntaxException {
+        String id = StringArgumentType.getString(ctx, "mode");
+        ArenaMode mode = ArenaMode.byId(id).orElseThrow(() -> NO_MODE.create(id));
+        Optional<ArenaMap> map = withMap ? Optional.of(map(ctx)) : Optional.empty();
+        Optional<String> failure = Queues.startNow(ctx.getSource().getServer(), mode, map);
+        if (failure.isPresent()) {
+            ctx.getSource().sendFailure(Component.literal(failure.get()));
+            return 0;
+        }
+        success(ctx, "Started a " + mode.displayName() + " match");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int stopAll(CommandContext<CommandSourceStack> ctx) {
+        int stopped = Matches.stopAll();
+        success(ctx, "Stopped " + stopped + " match(es)");
+        return stopped;
+    }
+
     private static int toggleBuild(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
+        if (Matches.inMatch(player)) {
+            ctx.getSource().sendFailure(Component.literal("You're in a match; /arena stop it first"));
+            return 0;
+        }
         boolean builder = !Lobby.builder(player);
         Lobby.setBuilder(player, builder);
         ctx.getSource().sendSuccess(() -> Component.literal(builder
