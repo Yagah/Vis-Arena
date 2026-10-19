@@ -58,6 +58,7 @@ is `VisArena`.
 | `.mode` | One class per game mode (FFA, TDM, Duel, Core Siege) |
 | `.lobby` | Lobby spawn, the hotbar menu item and the chest menus |
 | `.hud` | Sidebar, boss bars, titles |
+| `.stats` | Players' records per mode (SavedData) for the leaderboard |
 | `.command` | `/arena` commands |
 
 ## Conventions

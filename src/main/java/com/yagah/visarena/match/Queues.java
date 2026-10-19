@@ -2,7 +2,9 @@ package com.yagah.visarena.match;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -12,8 +14,10 @@ import java.util.UUID;
 
 import com.yagah.visarena.ArenaConfig;
 import com.yagah.visarena.lobby.ModeMenu;
+import com.yagah.visarena.lobby.TeamMenu;
 import com.yagah.visarena.map.ArenaData;
 import com.yagah.visarena.map.ArenaMap;
+import com.yagah.visarena.map.TeamColor;
 import com.yagah.visarena.mode.ArenaMode;
 
 import net.minecraft.ChatFormatting;
@@ -32,6 +36,10 @@ public final class Queues {
     private static final Map<ArenaMode, Set<UUID>> QUEUES = new EnumMap<>(ArenaMode.class);
     /** Ticks left on each counting-down queue. */
     private static final Map<ArenaMode, Integer> COUNTDOWNS = new EnumMap<>(ArenaMode.class);
+    /** Sides picked on the team screen, by player (team modes only; undecided players have none). */
+    private static final Map<UUID, TeamColor> PICKS = new HashMap<>();
+    /** When each map last had a match start (game time), for rotating through them. Forgotten on restart. */
+    private static final Map<String, Long> LAST_PLAYED = new HashMap<>();
     /** Seconds at which the countdown is announced. */
     private static final Set<Integer> ANNOUNCE = Set.of(10, 5, 3, 2, 1);
 
@@ -65,11 +73,70 @@ public final class Queues {
             QUEUES.get(mode).add(player.getUUID());
         }
         ModeMenu.refreshAll(player.server);
+        TeamMenu.refreshAll(player.server);
+        if (!wasIn && picking(player.getUUID())) {
+            // Joined a team countdown already under way: straight to the team screen.
+            TeamMenu.open(player);
+        }
         return !wasIn;
     }
 
     public static void leave(UUID player) {
         QUEUES.values().forEach(queue -> queue.remove(player));
+        PICKS.remove(player);
+    }
+
+    // ---- Team picks ----
+
+    /** True while the player is queued for a team mode that is counting down: the team screen is open to them. */
+    public static boolean picking(UUID player) {
+        return queuedFor(player).filter(mode -> mode.teams() && COUNTDOWNS.containsKey(mode)).isPresent();
+    }
+
+    public static Optional<TeamColor> pick(UUID player) {
+        return Optional.ofNullable(PICKS.get(player));
+    }
+
+    /** The players queued for the mode who will play its next match (the first in line, up to its most), in order. */
+    public static List<UUID> nextPlayers(ArenaMode mode) {
+        return QUEUES.get(mode).stream().limit(ArenaConfig.maxPlayers(mode)).toList();
+    }
+
+    /** How many of the next match's players have picked this side. */
+    public static long picked(ArenaMode mode, TeamColor team) {
+        return nextPlayers(mode).stream().filter(id -> PICKS.get(id) == team).count();
+    }
+
+    /** The most players one side may have in the mode's next match. */
+    public static int sideCap(ArenaMode mode) {
+        return TeamDeal.cap(nextPlayers(mode).size());
+    }
+
+    /**
+     * Picks a side on the team screen (or, picking the same side again, goes back to undecided). Refused with a reason
+     * if that side already holds half the players.
+     */
+    public static Optional<String> choose(ServerPlayer player, TeamColor team) {
+        Optional<ArenaMode> mode = queuedFor(player.getUUID()).filter(ArenaMode::teams);
+        if (mode.isEmpty()) {
+            return Optional.of("You're not queued for a team mode");
+        }
+        if (PICKS.get(player.getUUID()) == team) {
+            PICKS.remove(player.getUUID());
+        } else if (picked(mode.get(), team) >= sideCap(mode.get())) {
+            return Optional.of(team.displayName() + " is full");
+        } else {
+            PICKS.put(player.getUUID(), team);
+        }
+        TeamMenu.refreshAll(player.server);
+        return Optional.empty();
+    }
+
+    /** The picks of these players, for dealing the teams. */
+    static Map<UUID, TeamColor> picksOf(List<ServerPlayer> players) {
+        Map<UUID, TeamColor> picks = new HashMap<>();
+        players.forEach(player -> pick(player.getUUID()).ifPresent(team -> picks.put(player.getUUID(), team)));
+        return picks;
     }
 
     static void clear() {
@@ -82,12 +149,26 @@ public final class Queues {
         return ArenaData.get(server).maps().stream().anyMatch(map -> map.hosts(mode) && !Matches.inUse(map));
     }
 
-    /** A free map that hosts the mode, picked at random among them. */
+    /**
+     * A free map that hosts the mode: the one played least recently (never played counts as longest ago), random among
+     * ties, so the maps take turns.
+     */
     public static Optional<ArenaMap> freeMap(MinecraftServer server, ArenaMode mode) {
         List<ArenaMap> free = new ArrayList<>(ArenaData.get(server).maps().stream()
                 .filter(map -> map.hosts(mode) && !Matches.inUse(map)).toList());
         Collections.shuffle(free);
-        return free.stream().findFirst();
+        return free.stream().min(Comparator.comparingLong(map -> LAST_PLAYED.getOrDefault(map.name(), 0L)));
+    }
+
+    /** Records a map as just played, for the rotation. */
+    static void played(ArenaMap map, long gameTime) {
+        LAST_PLAYED.put(map.name(), gameTime);
+    }
+
+    /** True if the mode's queue is full enough to start but every map for it is in use. */
+    public static boolean waitingForMap(MinecraftServer server, ArenaMode mode) {
+        return mode.playable() && size(mode) >= ArenaConfig.minPlayers(mode) && !hasFreeMap(server, mode)
+                && ArenaData.get(server).maps().stream().anyMatch(map -> map.hosts(mode));
     }
 
     /** The queued players still online and not already playing, in order. */
@@ -104,6 +185,7 @@ public final class Queues {
         }
         if (changed || server.getTickCount() % 20 == 0) {
             ModeMenu.refreshAll(server);
+            TeamMenu.refreshAll(server);
         }
     }
 
@@ -120,11 +202,17 @@ public final class Queues {
             }
             return false;
         }
-        int full = ArenaConfig.ticks(ArenaConfig.FULL_COUNTDOWN_SECONDS);
+        // Team modes count down longer and never shorten, leaving time to pick sides.
+        int full = mode.teams() ? Integer.MAX_VALUE : ArenaConfig.ticks(ArenaConfig.FULL_COUNTDOWN_SECONDS);
         if (ticks == null) {
-            ticks = waiting.size() >= ArenaConfig.maxPlayers(mode) ? full : ArenaConfig.ticks(ArenaConfig.COUNTDOWN_SECONDS);
+            ticks = mode.teams() ? ArenaConfig.ticks(ArenaConfig.TEAM_COUNTDOWN_SECONDS)
+                    : waiting.size() >= ArenaConfig.maxPlayers(mode) ? full : ArenaConfig.ticks(ArenaConfig.COUNTDOWN_SECONDS);
             COUNTDOWNS.put(mode, ticks);
-            announce(waiting, Component.literal(mode.displayName() + " starts in " + (ticks / 20) + " s").withStyle(ChatFormatting.GREEN));
+            announce(waiting, Component.literal(mode.displayName() + " starts in " + (ticks / 20) + " s"
+                    + (mode.teams() ? ": pick your team" : "")).withStyle(ChatFormatting.GREEN));
+            if (mode.teams()) {
+                waiting.forEach(TeamMenu::open);
+            }
             return true;
         }
         if (waiting.size() >= ArenaConfig.maxPlayers(mode) && ticks > full) {

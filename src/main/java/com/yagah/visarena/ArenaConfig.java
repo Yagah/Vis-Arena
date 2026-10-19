@@ -26,6 +26,10 @@ public final class ArenaConfig {
             .comment("The countdown shortens to this once the queue holds the most players a match takes.")
             .defineInRange("fullCountdownSeconds", 5, 1, 600);
 
+    public static final ModConfigSpec.IntValue TEAM_COUNTDOWN_SECONDS = BUILDER
+            .comment("The countdown in team modes, long enough to pick a side on the team screen. It doesn't shorten when full.")
+            .defineInRange("teamCountdownSeconds", 20, 1, 600);
+
     public static final ModConfigSpec.IntValue FREEZE_SECONDS = BUILDER
             .comment("Seconds players stand frozen at their spawns before the fight starts.")
             .defineInRange("freezeSeconds", 3, 0, 60);
@@ -45,6 +49,23 @@ public final class ArenaConfig {
     public static final ModConfigSpec.IntValue SUDDEN_DEATH_SECONDS = BUILDER
             .comment("On a tie when time runs out, seconds of sudden death (the next kill to break the tie wins) before a draw.")
             .defineInRange("suddenDeathSeconds", 60, 0, 600);
+
+    static {
+        BUILDER.pop();
+        BUILDER.push("underdog");
+    }
+
+    public static final ModConfigSpec.IntValue UNDERDOG_HEALTH = BUILDER
+            .comment("When team sizes are uneven, extra max health (2 = one heart) for each player on the short team.")
+            .defineInRange("extraHealth", 4, 0, 100);
+
+    public static final ModConfigSpec.DoubleValue UNDERDOG_VIS_PER_SECOND = BUILDER
+            .comment("When team sizes are uneven, extra Vis per second for each player on the short team.")
+            .defineInRange("visPerSecond", 1.0, 0.0, 100.0);
+
+    public static final ModConfigSpec.DoubleValue UNDERDOG_RESPAWN_MULTIPLIER = BUILDER
+            .comment("When team sizes are uneven, the short team's respawn delays (Core Siege) are multiplied by this.")
+            .defineInRange("respawnMultiplier", 0.6, 0.0, 1.0);
 
     static {
         BUILDER.pop();
@@ -68,7 +89,8 @@ public final class ArenaConfig {
                     .defineInRange("maxPlayers", mode.defaultMax(), 2, 64);
             ModConfigSpec.IntValue scoreLimit = BUILDER
                     .comment(mode == ArenaMode.CORE_SIEGE ? "Not used: Core Siege is won on time and damage (see [core_siege_rules])."
-                            : "Score that wins a " + mode.displayName() + " match outright (kills, team kills or rounds).")
+                            : mode == ArenaMode.TDM ? "Team kills that win a Team Deathmatch of 4 or more per side (smaller ones: see [tdm_rules])."
+                            : "Score that wins a " + mode.displayName() + " match outright (kills or rounds).")
                     .defineInRange("scoreLimit", mode.defaultScoreLimit(), 1, 1000);
             ModConfigSpec.IntValue timeLimit = BUILDER
                     .comment("Seconds a " + mode.displayName() + " match (or round) lasts.")
@@ -79,6 +101,19 @@ public final class ArenaConfig {
     }
 
     static {
+        BUILDER.push("tdm_rules");
+    }
+
+    public static final ModConfigSpec.IntValue TDM_SMALL_SCORE_LIMIT = BUILDER
+            .comment("Team kills that win a Team Deathmatch of 2 or fewer per side (the bigger team, if uneven).")
+            .defineInRange("twoPerSideScoreLimit", 15, 1, 1000);
+
+    public static final ModConfigSpec.IntValue TDM_MID_SCORE_LIMIT = BUILDER
+            .comment("Team kills that win a Team Deathmatch of 3 per side (the bigger team, if uneven).")
+            .defineInRange("threePerSideScoreLimit", 20, 1, 1000);
+
+    static {
+        BUILDER.pop();
         BUILDER.push("core_siege_rules");
     }
 

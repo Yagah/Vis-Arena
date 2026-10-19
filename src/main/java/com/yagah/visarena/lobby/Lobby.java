@@ -4,6 +4,7 @@ import com.yagah.visarena.Players;
 import com.yagah.visarena.VisArena;
 import com.yagah.visarena.map.ArenaData;
 import com.yagah.visarena.match.Matches;
+import com.yagah.visarena.match.Queues;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -66,7 +67,7 @@ public final class Lobby {
         ArenaData.get(player.server).lobby().ifPresent(lobby -> {
             ServerLevel level = player.server.getLevel(lobby.dimension());
             if (level != null) {
-                player.teleportTo(level, lobby.spot().pos().x, lobby.spot().pos().y, lobby.spot().pos().z, lobby.spot().yaw(), lobby.spot().pitch());
+                Players.teleport(player, level, lobby.spot());
             }
         });
         Players.refresh(player);
@@ -164,10 +165,19 @@ public final class Lobby {
         }
     }
 
+    /** The Arena item: the team screen while a team countdown the player is queued for runs, else the game list. */
+    private static void openMenu(ServerPlayer player) {
+        if (Queues.picking(player.getUUID())) {
+            TeamMenu.open(player);
+        } else {
+            ModeMenu.open(player);
+        }
+    }
+
     @SubscribeEvent
     static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
         if (event.getEntity() instanceof ServerPlayer player && MenuItem.is(event.getItemStack())) {
-            ModeMenu.open(player);
+            openMenu(player);
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS);
         }
@@ -177,7 +187,7 @@ public final class Lobby {
     @SubscribeEvent
     static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         if (event.getEntity() instanceof ServerPlayer player && MenuItem.is(event.getItemStack())) {
-            ModeMenu.open(player);
+            openMenu(player);
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS);
         }

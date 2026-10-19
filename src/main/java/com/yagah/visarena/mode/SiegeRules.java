@@ -69,7 +69,15 @@ public final class SiegeRules implements ModeRules {
     private record Half(TeamColor attackers, boolean broke, int ticks, float damage) {
     }
 
+    /** The action bar a fighter was last sent, and when. */
+    private record Shown(Component text, int at) {
+    }
+
+    /** Ticks before an unchanged action bar is resent (the client fades it after about three seconds). */
+    private static final int ACTION_BAR_REFRESH = 40;
+
     private final List<Half> halves = new ArrayList<>();
+    private final Map<UUID, Shown> shown = new HashMap<>();
     private final ServerBossEvent bar = new ServerBossEvent(Component.literal("Core"), BossEvent.BossBarColor.RED, BossEvent.BossBarOverlay.NOTCHED_10);
     @Nullable
     private Match match;
@@ -116,8 +124,10 @@ public final class SiegeRules implements ModeRules {
 
     @Override
     public OptionalInt respawnDelay(Match match, Fighter fighter) {
-        return OptionalInt.of(ArenaConfig.ticks(side(match, fighter) == SiegeSide.ATTACK
-                ? ArenaConfig.ATTACKER_RESPAWN_SECONDS : ArenaConfig.DEFENDER_RESPAWN_SECONDS));
+        int delay = ArenaConfig.ticks(side(match, fighter) == SiegeSide.ATTACK
+                ? ArenaConfig.ATTACKER_RESPAWN_SECONDS : ArenaConfig.DEFENDER_RESPAWN_SECONDS);
+        // The short team (uneven sides) is back in the fight sooner.
+        return OptionalInt.of(match.underdog(fighter) ? (int) Math.round(delay * ArenaConfig.UNDERDOG_RESPAWN_MULTIPLIER.get()) : delay);
     }
 
     @Override
@@ -161,7 +171,8 @@ public final class SiegeRules implements ModeRules {
         BoundingBox box = match.map().core().orElseThrow();
         zone = AABB.of(box);
         near = zone.inflate(ArenaConfig.NEAR_RADIUS.get());
-        BlockPos spot = new BlockPos((box.minX() + box.maxX()) / 2, box.minY(), (box.minZ() + box.maxZ()) / 2);
+        ServerLevel level = match.level();
+        BlockPos spot = standingSpot(level, box);
         corePos = Vec3.atBottomCenterOf(spot);
         maxHealth = ArenaConfig.CORE_HEALTH.get();
         health = maxHealth;
@@ -170,14 +181,30 @@ public final class SiegeRules implements ModeRules {
         immuneUntil = 0;
         lastAttackerNear = match.ticks();
         exposed = true;
-        ServerLevel level = match.level();
         if (!level.getBlockState(spot.below()).isFaceSturdy(level, spot.below(), Direction.UP)) {
-            VisArena.LOGGER.warn("Map {}: the core needs a solid block under {}, or it will keep trying to move", match.map().name(), spot);
+            VisArena.LOGGER.warn("Map {}: no solid floor in the middle of the core zone; the core floats at {}", match.map().name(), spot);
         }
         spawnCore();
         bar.removeAllPlayers();
         match.online().forEach(bar::addPlayer);
         updateBar();
+    }
+
+    /**
+     * Where the core stands: in the middle column of the zone, on the lowest open spot with a solid block under it
+     * (so it doesn't matter whether the zone was marked from the ground or from the air above it), or the zone's floor.
+     */
+    private static BlockPos standingSpot(ServerLevel level, BoundingBox box) {
+        int x = (box.minX() + box.maxX()) / 2;
+        int z = (box.minZ() + box.maxZ()) / 2;
+        for (int y = box.minY(); y <= box.maxY() + 1; y++) {
+            BlockPos pos = new BlockPos(x, y, z);
+            if (level.getBlockState(pos).getCollisionShape(level, pos).isEmpty()
+                    && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) {
+                return pos;
+            }
+        }
+        return new BlockPos(x, box.minY(), z);
     }
 
     private void spawnCore() {
@@ -235,7 +262,7 @@ public final class SiegeRules implements ModeRules {
                 match.requestCheck();
             }
         }
-        if (now % 10 == 0) {
+        if (now % CHECK_TICKS == 0) {
             actionBars(match, now);
         }
     }
@@ -290,7 +317,12 @@ public final class SiegeRules implements ModeRules {
                 text = exposed ? Component.literal("Core exposed - get into the zone!").withStyle(ChatFormatting.RED)
                         : Component.literal("Holding the core").withStyle(ChatFormatting.GREEN);
             }
-            player.displayClientMessage(text, true);
+            // Sent when it changes, and refreshed before the client fades it out.
+            Shown last = shown.get(player.getUUID());
+            if (last == null || !last.text().equals(text) || now - last.at() >= ACTION_BAR_REFRESH) {
+                player.displayClientMessage(text, true);
+                shown.put(player.getUUID(), new Shown(text, now));
+            }
         }
     }
 

@@ -12,6 +12,7 @@ import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
+import com.yagah.visarena.Players;
 import com.yagah.visarena.VisArena;
 import com.yagah.visarena.lobby.Lobby;
 import com.yagah.visarena.map.ArenaData;
@@ -313,7 +314,7 @@ public final class ArenaCommands {
             return 0;
         }
         Spot spot = map.spawns().getFirst().spot();
-        player.teleportTo(level, spot.pos().x, spot.pos().y, spot.pos().z, spot.yaw(), spot.pitch());
+        Players.teleport(player, level, spot);
         return Command.SINGLE_SUCCESS;
     }
 }

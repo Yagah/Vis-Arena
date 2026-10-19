@@ -11,7 +11,9 @@ import com.yagah.vismod.team.CharacterChangeEvent;
 import com.yagah.vismod.team.VisAllies;
 import com.yagah.visarena.VisArena;
 import com.yagah.visarena.map.ArenaMap;
+import com.yagah.visarena.map.TeamColor;
 import com.yagah.visarena.mode.ArenaMode;
+import com.yagah.visarena.stats.ArenaStats;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -61,7 +63,13 @@ public final class Matches {
         if (level == null || mode.rules().isEmpty() || players.isEmpty()) {
             return Optional.empty();
         }
-        Match match = new Match(mode, map, level, mode.rules().get(), players);
+        Map<UUID, TeamColor> sides = mode.teams()
+                ? TeamDeal.deal(players.stream().map(ServerPlayer::getUUID).toList(), Queues.picksOf(players), ArenaStats.get(server))
+                : Map.of();
+        // Off the team screen (or any menu) and into the match.
+        players.forEach(ServerPlayer::closeContainer);
+        Match match = new Match(mode, map, level, mode.rules().get(), players, sides);
+        Queues.played(map, server.overworld().getGameTime());
         ACTIVE.add(match);
         players.forEach(player -> {
             Queues.leave(player.getUUID());

@@ -69,7 +69,7 @@ public final class TdmRules implements ModeRules {
             }
         }
         Map<TeamColor, Integer> scores = scores(match);
-        int limit = ArenaConfig.scoreLimit(ArenaMode.TDM);
+        int limit = scoreLimit(match);
         for (TeamColor team : TeamColor.values()) {
             if (scores.get(team) >= limit) {
                 return Optional.of(win(match, team, scores.get(team) + " kills"));
@@ -110,8 +110,22 @@ public final class TdmRules implements ModeRules {
                 .forEach(fighter -> lines.add((fighter.present() ? Match.name(fighter) : Match.name(fighter).withStyle(ChatFormatting.DARK_GRAY))
                         .append(Component.literal(" " + fighter.kills()).withStyle(ChatFormatting.GOLD))));
         lines.add(Component.empty());
-        lines.add(Component.literal("First to " + ArenaConfig.scoreLimit(ArenaMode.TDM) + " kills").withStyle(ChatFormatting.GRAY));
+        lines.add(Component.literal("First to " + scoreLimit(match) + " kills").withStyle(ChatFormatting.GRAY));
         return lines;
+    }
+
+    /**
+     * The team kills that win, scaled to the match's size: the bigger team's size at the start (leavers still count, so
+     * it doesn't move mid-match). 2 or fewer per side, 3, or 4 and up each have their own limit in the config.
+     */
+    private static int scoreLimit(Match match) {
+        int perSide = 0;
+        for (TeamColor team : TeamColor.values()) {
+            perSide = Math.max(perSide, members(match, team).size());
+        }
+        return perSide <= 2 ? ArenaConfig.TDM_SMALL_SCORE_LIMIT.get()
+                : perSide == 3 ? ArenaConfig.TDM_MID_SCORE_LIMIT.get()
+                : ArenaConfig.scoreLimit(ArenaMode.TDM);
     }
 
     private static List<ArenaMap.Spawn> spawns(Match match, TeamColor team) {

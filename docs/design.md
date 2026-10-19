@@ -63,7 +63,7 @@ Falling below the map's floor height counts as a death (void arenas).
 | Mode | Players | Teams | Wins when | Time limit |
 | --- | --- | --- | --- | --- |
 | FFA | 2–12 | none | first to 15 kills; else most kills | 8 min |
-| TDM | 4–12 | 2, balanced | first team to 30 kills; else most | 10 min |
+| TDM | 4–12 | 2, balanced | first team to 15 kills (2 a side), 20 (3), 30 (4+); else most | 10 min |
 | 1v1 | 2 | none | first to 3 rounds | 2 min per round |
 | Core Siege | 4–12 | 2, balanced | broke the core faster; else more damage | 4 min per half |
 
@@ -77,8 +77,19 @@ down, is a drawn round. A pause (`roundPauseSeconds`, 3) shows the round's resul
 countdown starts. First to 3 rounds wins; after 9 rounds (drawn ones count) the one ahead wins, or it's a draw.
 
 **TDM and Core Siege teams** are vanilla teams named after their colour (red, blue), made for the match and removed
-after, with friendly fire off and name tags shown to the team only. Players are dealt into teams by queue order,
-alternating; parties are a later idea.
+after, with friendly fire off and name tags shown to the team only.
+
+**Picking teams.** A team mode's countdown is longer (`teamCountdownSeconds`, 20) and doesn't shorten when full. When it
+starts, everyone queued gets the **team screen** (and the Arena item opens it while the countdown runs): Red and Blue
+buttons, the countdown, and three columns of player heads (red, undecided, blue), live. Clicking a side joins it,
+clicking it again goes back to undecided; a side can't take more than half the players, rounded up. When the match
+starts, picks are kept (in queue order, while their side has room) and everyone else is placed strongest first, each on
+the smaller side (the weaker one on a tie). Strength is a rough rating from the stats: mostly win rate, some kills per
+death, pulled toward average for players with few games.
+
+**Underdog bonus.** With an odd number of players one team is a player short. That team gets extra max health (4, two
+hearts), extra Vis (1 a second) and, in Core Siege, respawn delays cut to 60%; all three are config. It's checked again
+whenever someone leaves, so it moves to whichever team is short.
 
 **Core Siege.** Two halves on one core. In the first, red attacks and blue defends; in the second they swap.
 
@@ -91,6 +102,9 @@ alternating; parties are a later idea.
 - **Regeneration**: with no attacker near the zone for 10 s, the core heals slowly (1% a second), but never back past
   the last shockwave mark it fell below.
 - **Home advantage**: defenders near their core regain Vis faster (2 a second).
+- **Moving the core**: attackers' moving abilities (Sphinx's cube, pushes, pulls) can take it for a moment, but it's
+  put back in place every tick, and while held it can't be hit, so it only costs the attackers time. Defenders' can't
+  touch it. Left as is on purpose (2026-10-19); an "immovable" entity tag in Vis Mod would stop it if ever needed.
 - **Respawning**: a downed player watches as a spectator for a fixed delay (5 s, each side its own setting), then
   respawns at their side's spawns.
 - **A half ends** when the core breaks or its time (4 min) runs out. The attackers' score is their time to break it,
@@ -143,6 +157,13 @@ All vanilla, so players need nothing:
 - **Action bar**: your kills and deaths in FFA/TDM; "Core shielded" or "Core exposed" in Core Siege.
 - **Lobby**: the menu item, and a chat line when a queue starts counting down.
 
+## Stats
+
+Every finished match (not a stopped one) adds to each fighter's record for that mode: one game, a win if they were among
+the winners, their kills and deaths. Leavers count, as a game not won. Records are saved with the world. The mode menu's
+book opens **Stats and leaderboard**: for all modes together and for each mode, your record and the five players with
+the most wins (then kills).
+
 ## Config
 
 A COMMON config, `config/visarena-common.toml`: countdown times, freeze time, spawn protection, the end screen time,
@@ -161,9 +182,8 @@ immunity, and the defenders' Vis bonus and its radius. Characters are locked dur
 4. **1v1.** Rounds, spectating the rest of a round, best of N.
 5. **Core Siege.** Halves on one core, the core entity and its health, shielding, shockwaves, regeneration, the Vis
    bonus, timed respawns, its boss bar and win rules.
-6. **Polish.** Stats (wins, kills) kept per player, a leaderboard in the menu, map voting. Maps: pick the least
-   recently played free map (random among ties) rather than any at random, and have the menu say "Waiting for a free
-   map" when every map for a full queue is in use.
+6. **Polish.** Stats and a leaderboard; map rotation (the least recently played free map, random among ties) and the
+   menu's "Waiting for a free map"; no more "moved too quickly" after match teleports. Map voting is left for later.
 
 ## Decisions and open questions
 

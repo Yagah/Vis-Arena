@@ -3,16 +3,19 @@ package com.yagah.visarena.match;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.OptionalInt;
 import java.util.UUID;
 
 import javax.annotation.Nullable;
 
+import com.yagah.vismod.data.VisDataSync;
 import com.yagah.vismod.team.VisAllies;
 import com.yagah.visarena.ArenaConfig;
 import com.yagah.visarena.Players;
@@ -25,6 +28,7 @@ import com.yagah.visarena.map.Spot;
 import com.yagah.visarena.map.TeamColor;
 import com.yagah.visarena.mode.ArenaMode;
 import com.yagah.visarena.mode.ModeRules;
+import com.yagah.visarena.stats.ArenaStats;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -40,6 +44,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.level.GameType;
@@ -56,6 +61,7 @@ public final class Match {
     public enum State { STARTING, PLAYING, ROUND_OVER, ENDED }
 
     private static final ResourceLocation FREEZE = ResourceLocation.fromNamespaceAndPath(VisArena.MODID, "freeze");
+    private static final ResourceLocation UNDERDOG = ResourceLocation.fromNamespaceAndPath(VisArena.MODID, "underdog");
     /** How far a frozen player may drift before being put back. */
     private static final double FREEZE_SLACK = 0.3;
     private static int nextId;
@@ -70,6 +76,8 @@ public final class Match {
     private final Map<UUID, Fighter> fighters = new LinkedHashMap<>();
     private final Map<UUID, Spot> frozenAt = new HashMap<>();
     private final Map<TeamColor, PlayerTeam> teams = new EnumMap<>(TeamColor.class);
+    /** The short side in a team match with uneven teams (empty when even). */
+    private final Set<TeamColor> underdogs = EnumSet.noneOf(TeamColor.class);
     private final ServerBossEvent bossBar;
     private final Sidebar sidebar;
 
@@ -87,19 +95,19 @@ public final class Match {
     @Nullable
     private ModeRules.Result result;
 
-    Match(ArenaMode mode, ArenaMap map, ServerLevel level, ModeRules rules, List<ServerPlayer> players) {
+    /** A match of these players; in team modes, sides holds each one's team (from TeamDeal). */
+    Match(ArenaMode mode, ArenaMap map, ServerLevel level, ModeRules rules, List<ServerPlayer> players, Map<UUID, TeamColor> sides) {
         this.mode = mode;
         this.map = map;
         this.level = level;
         this.rules = rules;
         players.forEach(player -> fighters.put(player.getUUID(), new Fighter(player.getUUID(), player.getGameProfile().getName())));
-        if (mode.teams()) {
-            // Dealt alternately in queue order, so the teams differ by one at most.
-            int i = 0;
-            for (Fighter fighter : fighters.values()) {
-                fighter.setTeam(TeamColor.values()[i++ % TeamColor.values().length]);
+        sides.forEach((id, team) -> {
+            Fighter fighter = fighters.get(id);
+            if (fighter != null) {
+                fighter.setTeam(team);
             }
-        }
+        });
         this.bossBar = new ServerBossEvent(Component.literal(mode.displayName()), BossEvent.BossBarColor.YELLOW, BossEvent.BossBarOverlay.PROGRESS);
         this.sidebar = new Sidebar(VisArena.MODID + "_" + id, Component.literal(mode.displayName()).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
     }
@@ -174,6 +182,7 @@ public final class Match {
     /** Puts everyone on their teams and spawns, frozen, with the HUD up. */
     void begin() {
         makeTeams();
+        updateUnderdogs();
         for (ServerPlayer player : online()) {
             bossBar.addPlayer(player);
             sidebar.show(player);
@@ -225,7 +234,7 @@ public final class Match {
         for (ServerPlayer player : online()) {
             Spot spot = frozenAt.get(player.getUUID());
             if (spot != null && player.position().distanceToSqr(spot.pos()) > FREEZE_SLACK * FREEZE_SLACK) {
-                player.connection.teleport(spot.pos().x, spot.pos().y, spot.pos().z, player.getYRot(), player.getXRot());
+                Players.holdAt(player, spot.pos());
             }
         }
         if (stateTicks >= freeze) {
@@ -266,6 +275,9 @@ public final class Match {
                 player.displayClientMessage(Component.literal("Respawning in " + (fighter.respawnAt() - tick) / 20)
                         .withStyle(ChatFormatting.YELLOW), true);
             }
+        }
+        if (tick % 20 == 0 && !underdogs.isEmpty()) {
+            underdogVis();
         }
         rules.tick(this);
         if (state != State.PLAYING) {
@@ -338,6 +350,11 @@ public final class Match {
         this.result = result;
         state = State.ENDED;
         stateTicks = 0;
+        // Everyone who played counts, leavers included (as a game not won). A stopped match isn't recorded.
+        ArenaStats stats = ArenaStats.get(level.getServer());
+        for (Fighter fighter : fighters.values()) {
+            stats.add(fighter.id(), fighter.name(), mode, result.winners().contains(fighter.id()), fighter.kills(), fighter.deaths());
+        }
         MutableComponent summary = Component.literal(mode.displayName() + " on " + map.name() + ": ").withStyle(ChatFormatting.GOLD)
                 .append(result.headline().copy());
         fighters.values().stream()
@@ -372,6 +389,7 @@ public final class Match {
         rules.finished(this);
         removeTeams();
         for (ServerPlayer player : players) {
+            setUnderdogHealth(player, false);
             unfreeze(player);
             sidebar.hide(player);
             Lobby.send(player);
@@ -388,6 +406,8 @@ public final class Match {
         scoresChanged = true;
         unfreeze(player);
         leaveTeam(player);
+        setUnderdogHealth(player, false);
+        updateUnderdogs();
         bossBar.removePlayer(player);
         sidebar.hide(player);
         if (state == State.PLAYING) {
@@ -491,6 +511,71 @@ public final class Match {
      * In a team mode, a vanilla scoreboard team per side for this match: coloured names, friendly fire off (which Vis
      * Mod's ally check reads, so teammates' abilities spare each other), name tags hidden from the other team.
      */
+    /** True if this fighter's team is the short one (uneven team sizes), and so gets the underdog bonus. */
+    public boolean underdog(Fighter fighter) {
+        return fighter.team().isPresent() && underdogs.contains(fighter.team().get());
+    }
+
+    /**
+     * In team modes with uneven sides (counting players still here), the short team gets the underdog bonus: extra max
+     * health now, extra Vis every second, and (in Core Siege) quicker respawns. Rechecked whenever someone leaves.
+     */
+    private void updateUnderdogs() {
+        if (!mode.teams()) {
+            return;
+        }
+        Map<TeamColor, Integer> sizes = new EnumMap<>(TeamColor.class);
+        for (TeamColor team : TeamColor.values()) {
+            sizes.put(team, (int) fighters.values().stream().filter(f -> f.present() && f.team().equals(Optional.of(team))).count());
+        }
+        int red = sizes.get(TeamColor.RED);
+        int blue = sizes.get(TeamColor.BLUE);
+        Set<TeamColor> next = red == blue ? Set.of() : Set.of(red < blue ? TeamColor.RED : TeamColor.BLUE);
+        if (next.equals(underdogs)) {
+            return;
+        }
+        underdogs.clear();
+        underdogs.addAll(next);
+        for (ServerPlayer player : online()) {
+            boolean bonus = underdog(fighters.get(player.getUUID()));
+            setUnderdogHealth(player, bonus);
+            if (bonus) {
+                player.sendSystemMessage(Component.literal("Your team is a player short. Underdog bonus: +"
+                        + ArenaConfig.UNDERDOG_HEALTH.get() / 2.0 + " hearts, +" + ArenaConfig.UNDERDOG_VIS_PER_SECOND.get() + " Vis a second"
+                        + (mode == ArenaMode.CORE_SIEGE ? ", quicker respawns" : "")).withStyle(ChatFormatting.AQUA));
+            }
+        }
+    }
+
+    /** Once a second: the short team's extra Vis (not while waiting to respawn). */
+    private void underdogVis() {
+        float vis = ArenaConfig.UNDERDOG_VIS_PER_SECOND.get().floatValue();
+        if (vis <= 0) {
+            return;
+        }
+        for (ServerPlayer player : online()) {
+            Fighter fighter = fighters.get(player.getUUID());
+            if (underdog(fighter) && !fighter.out()) {
+                VisDataSync.get(player).addEnergy(vis);
+                VisDataSync.syncEnergyIfChanged(player);
+            }
+        }
+    }
+
+    private static void setUnderdogHealth(ServerPlayer player, boolean bonus) {
+        AttributeInstance health = player.getAttribute(Attributes.MAX_HEALTH);
+        if (health == null) {
+            return;
+        }
+        health.removeModifier(UNDERDOG);
+        if (bonus && ArenaConfig.UNDERDOG_HEALTH.get() > 0) {
+            health.addTransientModifier(new AttributeModifier(UNDERDOG, ArenaConfig.UNDERDOG_HEALTH.get(), AttributeModifier.Operation.ADD_VALUE));
+        }
+        if (player.getHealth() > player.getMaxHealth()) {
+            player.setHealth(player.getMaxHealth());
+        }
+    }
+
     private void makeTeams() {
         if (!mode.teams()) {
             return;
@@ -536,7 +621,7 @@ public final class Match {
     }
 
     private void place(ServerPlayer player, Spot spot) {
-        player.teleportTo(level, spot.pos().x, spot.pos().y, spot.pos().z, spot.yaw(), spot.pitch());
+        Players.teleport(player, level, spot);
     }
 
     private void freeze(ServerPlayer player, Spot spot) {

@@ -32,6 +32,7 @@ public final class ModeMenu {
     /** Where each mode's button sits, in ArenaMode order. */
     private static final int[] MODE_SLOTS = {10, 12, 14, 16};
     private static final int CLOSE_SLOT = 22;
+    private static final int STATS_SLOT = 26;
 
     /** The open menu, so it can be redrawn. */
     private static final class Screen extends ButtonMenu {
@@ -81,6 +82,9 @@ public final class ModeMenu {
                 lore.add(Component.literal("Coming soon").withStyle(ChatFormatting.DARK_GRAY));
             } else {
                 Queues.secondsLeft(mode).ifPresent(seconds -> lore.add(Component.literal("Starting in " + seconds + " s").withStyle(ChatFormatting.GREEN)));
+                if (Queues.waitingForMap(player.server, mode)) {
+                    lore.add(Component.literal("Waiting for a free map").withStyle(ChatFormatting.YELLOW));
+                }
                 lore.add(in ? Component.literal("You're queued - click to leave").withStyle(ChatFormatting.YELLOW)
                         : Component.literal("Click to join").withStyle(ChatFormatting.GREEN));
             }
@@ -92,9 +96,15 @@ public final class ModeMenu {
             grid.setItem(MODE_SLOTS[i], button);
         }
         grid.setItem(CLOSE_SLOT, ButtonMenu.button(Items.BARRIER, Component.literal("Close").withStyle(ChatFormatting.RED), List.of()));
+        grid.setItem(STATS_SLOT, ButtonMenu.button(Items.BOOK, Component.literal("Stats and leaderboard").withStyle(ChatFormatting.GOLD),
+                List.of(Component.literal("Your record and the top players"))));
     }
 
     private static void click(ServerPlayer player, int slot) {
+        if (slot == STATS_SLOT) {
+            StatsMenu.open(player);
+            return;
+        }
         if (slot == CLOSE_SLOT) {
             player.closeContainer();
             return;
