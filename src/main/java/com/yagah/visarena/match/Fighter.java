@@ -1,6 +1,9 @@
 package com.yagah.visarena.match;
 
+import java.util.Optional;
 import java.util.UUID;
+
+import com.yagah.visarena.map.TeamColor;
 
 /** One player in a match, and their score. Kept after they leave, so the final scores still list them. */
 public final class Fighter {
@@ -11,6 +14,7 @@ public final class Fighter {
     /** The match tick their spawn protection ends. */
     private int protectedUntil;
     private boolean present = true;
+    private Optional<TeamColor> team = Optional.empty();
 
     Fighter(UUID id, String name) {
         this.id = id;
@@ -31,6 +35,15 @@ public final class Fighter {
 
     public int deaths() {
         return deaths;
+    }
+
+    /** Their side in a team mode; empty in free-for-all modes. */
+    public Optional<TeamColor> team() {
+        return team;
+    }
+
+    void setTeam(TeamColor team) {
+        this.team = Optional.of(team);
     }
 
     /** False once they've left the server (or been removed from the match). */

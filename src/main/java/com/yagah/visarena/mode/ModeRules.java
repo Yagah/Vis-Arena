@@ -3,6 +3,7 @@ package com.yagah.visarena.mode;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import com.yagah.visarena.map.Spot;
@@ -16,8 +17,8 @@ import net.minecraft.server.level.ServerPlayer;
  * engine ({@link Match}) runs everything else the same for every mode.
  */
 public interface ModeRules {
-    /** How a match ended: the winning player (or team, later), or none for a draw, and the headline shown to everyone. */
-    record Result(Optional<UUID> winner, Component headline, Component detail) {
+    /** How a match ended: the winning players (one, or a whole team; none for a draw), and what everyone is shown. */
+    record Result(Set<UUID> winners, Component headline, Component detail) {
     }
 
     /** Each fighter's first spawn. */

@@ -23,6 +23,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -127,6 +128,11 @@ public final class Matches {
                 match.remove(player);
             }
         }
+    }
+
+    @SubscribeEvent
+    static void onServerStarted(ServerStartedEvent event) {
+        Match.removeLeftoverTeams(event.getServer());
     }
 
     @SubscribeEvent

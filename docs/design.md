@@ -135,7 +135,9 @@ respawn delay.
 3. **TDM.** Match teams, balancing, team spawns, team scores.
 4. **1v1.** Rounds, spectating the rest of a round, best of N.
 5. **Core Siege.** Core zones, HP and draining, contesting, its boss bars and win rules.
-6. **Polish.** Stats (wins, kills) kept per player, a leaderboard in the menu, map voting.
+6. **Polish.** Stats (wins, kills) kept per player, a leaderboard in the menu, map voting. Maps: pick the least
+   recently played free map (random among ties) rather than any at random, and have the menu say "Waiting for a free
+   map" when every map for a full queue is in use.
 
 ## Decisions and open questions
 

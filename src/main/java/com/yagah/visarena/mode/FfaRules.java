@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import com.yagah.visarena.ArenaConfig;
@@ -74,7 +75,7 @@ public final class FfaRules implements ModeRules {
             return Optional.of(win(leader.get(), leader.get().kills() + " kills"));
         }
         if (last) {
-            return Optional.of(new Result(Optional.empty(), Component.literal("Draw").withStyle(ChatFormatting.YELLOW),
+            return Optional.of(new Result(Set.of(), Component.literal("Draw").withStyle(ChatFormatting.YELLOW),
                     Component.literal("Tied for the most kills")));
         }
         return Optional.empty();
@@ -107,7 +108,7 @@ public final class FfaRules implements ModeRules {
     }
 
     private static Result win(Fighter winner, String detail) {
-        return new Result(Optional.of(winner.id()), Component.literal(winner.name() + " wins!").withStyle(ChatFormatting.GOLD),
+        return new Result(Set.of(winner.id()), Component.literal(winner.name() + " wins!").withStyle(ChatFormatting.GOLD),
                 Component.literal(detail));
     }
 }

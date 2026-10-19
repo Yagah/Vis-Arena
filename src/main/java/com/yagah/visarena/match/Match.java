@@ -2,6 +2,7 @@ package com.yagah.visarena.match;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +21,7 @@ import com.yagah.visarena.hud.Titles;
 import com.yagah.visarena.lobby.Lobby;
 import com.yagah.visarena.map.ArenaMap;
 import com.yagah.visarena.map.Spot;
+import com.yagah.visarena.map.TeamColor;
 import com.yagah.visarena.mode.ArenaMode;
 import com.yagah.visarena.mode.ModeRules;
 
@@ -27,6 +29,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.ServerScoreboard;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -37,6 +41,8 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Team;
 
 /**
  * One match on one map: the same flow for every mode. Starting (players frozen at their spawns), playing (the mode's
@@ -51,6 +57,8 @@ public final class Match {
     /** How far a frozen player may drift before being put back. */
     private static final double FREEZE_SLACK = 0.3;
     private static int nextId;
+    /** Every match team is named this, then the match number and the colour. */
+    private static final String TEAM_PREFIX = VisArena.MODID + "_";
 
     private final int id = nextId++;
     private final ArenaMode mode;
@@ -59,6 +67,7 @@ public final class Match {
     private final ModeRules rules;
     private final Map<UUID, Fighter> fighters = new LinkedHashMap<>();
     private final Map<UUID, Spot> frozenAt = new HashMap<>();
+    private final Map<TeamColor, PlayerTeam> teams = new EnumMap<>(TeamColor.class);
     private final ServerBossEvent bossBar;
     private final Sidebar sidebar;
 
@@ -78,6 +87,13 @@ public final class Match {
         this.level = level;
         this.rules = rules;
         players.forEach(player -> fighters.put(player.getUUID(), new Fighter(player.getUUID(), player.getGameProfile().getName())));
+        if (mode.teams()) {
+            // Dealt alternately in queue order, so the teams differ by one at most.
+            int i = 0;
+            for (Fighter fighter : fighters.values()) {
+                fighter.setTeam(TeamColor.values()[i++ % TeamColor.values().length]);
+            }
+        }
         this.bossBar = new ServerBossEvent(Component.literal(mode.displayName()), BossEvent.BossBarColor.YELLOW, BossEvent.BossBarOverlay.PROGRESS);
         this.sidebar = new Sidebar(VisArena.MODID + "_" + id, Component.literal(mode.displayName()).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
     }
@@ -115,8 +131,9 @@ public final class Match {
 
     // ---- Flow ----
 
-    /** Puts everyone on their spawns, frozen, with the HUD up. */
+    /** Puts everyone on their teams and spawns, frozen, with the HUD up. */
     void begin() {
+        makeTeams();
         Map<UUID, Spot> spots = rules.startSpots(this);
         for (ServerPlayer player : online()) {
             Spot spot = spots.get(player.getUUID());
@@ -211,11 +228,11 @@ public final class Match {
                 .append(result.headline().copy());
         fighters.values().stream()
                 .sorted(Comparator.comparingInt(Fighter::kills).reversed().thenComparingInt(Fighter::deaths))
-                .forEach(fighter -> summary.append(Component.literal("\n  " + fighter.name() + ": " + fighter.kills() + " kills, "
-                        + fighter.deaths() + " deaths").withStyle(ChatFormatting.GRAY)));
+                .forEach(fighter -> summary.append(Component.literal("\n  ")).append(name(fighter))
+                        .append(Component.literal(": " + fighter.kills() + " kills, " + fighter.deaths() + " deaths").withStyle(ChatFormatting.GRAY)));
         for (ServerPlayer player : online()) {
             Titles.show(player, result.headline(), result.detail(), ArenaConfig.ticks(ArenaConfig.END_SECONDS));
-            boolean won = result.winner().equals(Optional.of(player.getUUID()));
+            boolean won = result.winners().contains(player.getUUID());
             player.playNotifySound(won ? SoundEvents.UI_TOAST_CHALLENGE_COMPLETE : SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.MASTER, 1.0f, 1.0f);
             player.sendSystemMessage(summary);
         }
@@ -237,6 +254,7 @@ public final class Match {
         fighters.values().forEach(Fighter::leave);
         Matches.finished(this);
         bossBar.removeAllPlayers();
+        removeTeams();
         for (ServerPlayer player : players) {
             unfreeze(player);
             sidebar.hide(player);
@@ -252,6 +270,7 @@ public final class Match {
         }
         fighter.leave();
         unfreeze(player);
+        leaveTeam(player);
         bossBar.removePlayer(player);
         sidebar.hide(player);
         if (state == State.PLAYING) {
@@ -284,13 +303,14 @@ public final class Match {
             return;
         }
         fighter.addDeath();
-        Optional<Fighter> killer = killer(victim, source).filter(other -> other != fighter);
+        // No credit for downing yourself or a teammate.
+        Optional<Fighter> killer = killer(victim, source)
+                .filter(other -> other != fighter && (other.team().isEmpty() || !other.team().equals(fighter.team())));
         killer.ifPresent(Fighter::addKill);
-        Component message = killer.map(k -> Component.literal(k.name()).withStyle(ChatFormatting.GOLD)
+        Component message = killer.map(k -> name(k)
                         .append(Component.literal(" eliminated ").withStyle(ChatFormatting.GRAY))
-                        .append(Component.literal(fighter.name()).withStyle(ChatFormatting.WHITE)))
-                .orElse(Component.literal(fighter.name()).withStyle(ChatFormatting.WHITE)
-                        .append(Component.literal(" died").withStyle(ChatFormatting.GRAY)));
+                        .append(name(fighter)))
+                .orElse(name(fighter).append(Component.literal(" died").withStyle(ChatFormatting.GRAY)));
         for (ServerPlayer player : online()) {
             player.sendSystemMessage(message);
         }
@@ -317,6 +337,61 @@ public final class Match {
     }
 
     // ---- Players ----
+
+    /** A fighter's name, in their team's colour (white without one). */
+    public static MutableComponent name(Fighter fighter) {
+        return Component.literal(fighter.name()).withStyle(fighter.team().map(TeamColor::color).orElse(ChatFormatting.WHITE));
+    }
+
+    // ---- Teams ----
+
+    /**
+     * In a team mode, a vanilla scoreboard team per side for this match: coloured names, friendly fire off (which Vis
+     * Mod's ally check reads, so teammates' abilities spare each other), name tags hidden from the other team.
+     */
+    private void makeTeams() {
+        if (!mode.teams()) {
+            return;
+        }
+        ServerScoreboard scoreboard = level.getServer().getScoreboard();
+        for (TeamColor color : TeamColor.values()) {
+            String name = TEAM_PREFIX + id + "_" + color.id();
+            PlayerTeam stale = scoreboard.getPlayerTeam(name);
+            if (stale != null) {
+                scoreboard.removePlayerTeam(stale);
+            }
+            PlayerTeam team = scoreboard.addPlayerTeam(name);
+            team.setDisplayName(Component.literal(color.displayName()));
+            team.setColor(color.color());
+            team.setAllowFriendlyFire(false);
+            team.setSeeFriendlyInvisibles(true);
+            team.setNameTagVisibility(Team.Visibility.HIDE_FOR_OTHER_TEAMS);
+            teams.put(color, team);
+        }
+        for (Fighter fighter : fighters.values()) {
+            fighter.team().ifPresent(color -> scoreboard.addPlayerToTeam(fighter.name(), teams.get(color)));
+        }
+    }
+
+    private void leaveTeam(ServerPlayer player) {
+        PlayerTeam team = level.getServer().getScoreboard().getPlayersTeam(player.getScoreboardName());
+        if (team != null && teams.containsValue(team)) {
+            level.getServer().getScoreboard().removePlayerFromTeam(player.getScoreboardName(), team);
+        }
+    }
+
+    private void removeTeams() {
+        teams.values().forEach(team -> level.getServer().getScoreboard().removePlayerTeam(team));
+        teams.clear();
+    }
+
+    /** Teams left behind by matches that never finished (the server crashed or was killed mid-match). */
+    static void removeLeftoverTeams(MinecraftServer server) {
+        ServerScoreboard scoreboard = server.getScoreboard();
+        List.copyOf(scoreboard.getPlayerTeams()).stream()
+                .filter(team -> team.getName().startsWith(TEAM_PREFIX))
+                .forEach(scoreboard::removePlayerTeam);
+    }
 
     private void place(ServerPlayer player, Spot spot) {
         player.teleportTo(level, spot.pos().x, spot.pos().y, spot.pos().z, spot.yaw(), spot.pitch());
