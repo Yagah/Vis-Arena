@@ -62,8 +62,8 @@ Falling below the map's floor height counts as a death (void arenas).
 
 | Mode | Players | Teams | Wins when | Time limit |
 | --- | --- | --- | --- | --- |
-| FFA | 2–12 | none | first to 15 kills; else most kills | 8 min |
-| TDM | 4–12 | 2, balanced | first team to 15 kills (2 a side), 20 (3), 30 (4+); else most | 10 min |
+| FFA | 2–12 | none | first to 2 kills per player (2 players: 4, 3: 6, 4: 8); else most kills | 8 min |
+| TDM | 4–12 | 2, balanced | first team to 10 kills; else most | 8 min |
 | 1v1 | 2 | none | first to 3 rounds | 2 min per round |
 | Core Siege | 4–12 | 2, balanced | broke the core faster; else more damage | 4 min per half |
 
@@ -72,9 +72,10 @@ then a draw); Core Siege has none (see below).
 
 **1v1 rounds.** Each round starts with both players refreshed and frozen on the two spawns farthest apart. A downed
 player watches the rest of the round as a spectator (and can't affect anything); the one left standing takes it. When a
-round's time runs out, whoever has more health left (as a share of their max) takes it; level on health, or both
-down, is a drawn round. A pause (`roundPauseSeconds`, 3) shows the round's result and the score, then the next round's
-countdown starts. First to 3 rounds wins; after 9 rounds (drawn ones count) the one ahead wins, or it's a draw.
+round's time runs out with nobody downed (whatever their health), or both go down, the round is drawn. A pause
+(`roundPauseSeconds`, 3) shows the round's result and the score, then the next round's countdown starts. First to 3
+rounds wins. The third drawn round (`drawsToEnd`) ends the match as **no contest**: everyone back to the lobby, and
+nothing goes in the stats.
 
 **TDM and Core Siege teams** are vanilla teams named after their colour (red, blue), made for the match and removed
 after, with friendly fire off and name tags shown to the team only.
@@ -99,8 +100,7 @@ whenever someone leaves, so it moves to whichever team is short.
 - **Shielded while defended**: while any defender stands in the core zone, the core takes no damage. Attackers must
   clear or pull the defenders out, then burst it while it's exposed. The action bar tells each side which.
 - **Shockwaves**: as it falls past 75%, 50% and 25%, the core blasts attackers near it away and is immune for 2 s.
-- **Regeneration**: with no attacker near the zone for 10 s, the core heals slowly (1% a second), but never back past
-  the last shockwave mark it fell below.
+- **No healing**: damage to the core stays for the rest of the half (regeneration was taken out on 2026-10-22).
 - **Home advantage**: defenders near their core regain Vis faster (2 a second).
 - **Moving the core**: attackers' moving abilities (Sphinx's cube, pushes, pulls) can take it for a moment, but it's
   put back in place every tick, and while held it can't be hit, so it only costs the attackers time. Defenders' can't
@@ -110,8 +110,9 @@ whenever someone leaves, so it moves to whichever team is short.
 - **A half ends** when the core breaks or its time (4 min) runs out. The attackers' score is their time to break it,
   or, if the defenders held, the share of the core's health they took.
 - **Winning**: a team that broke the core beats one that didn't; if both did, the faster one; if neither, the one that
-  did more damage; level is a draw. The second half ends early once it's settled: when the second attackers pass the
-  first team's time without breaking it, or pass their damage when the first team didn't break it.
+  did more damage; level is a draw. The second attackers always get their full half, or until they break the core
+  (which ends the match on their time). The one early end: the first team broke the core, and the second attackers
+  pass that time without breaking it, so they can no longer win.
 
 ## Maps
 
@@ -168,7 +169,7 @@ the most wins (then kills).
 
 A COMMON config, `config/visarena-common.toml`: countdown times, freeze time, spawn protection, the end screen time,
 and each mode's player counts, score limit and time limit (per round in 1v1, per half in Core Siege). Core Siege: core
-health and a damage multiplier, respawn delay per side, regeneration delay and rate, shockwave radius, strength and
+health and a damage multiplier, respawn delay per side, the "near the core" radius, shockwave strength and
 immunity, and the defenders' Vis bonus and its radius. Characters are locked during matches (Vis Mod's
 `CharacterChangeEvent` is refused), so a player must have one before they can queue.
 
@@ -180,7 +181,7 @@ immunity, and the defenders' Vis bonus and its radius. Characters are locked dur
    lobby; FFA scoring; sidebar, boss bar and titles; `/arena start` and `/arena stop`.
 3. **TDM.** Match teams, balancing, team spawns, team scores.
 4. **1v1.** Rounds, spectating the rest of a round, best of N.
-5. **Core Siege.** Halves on one core, the core entity and its health, shielding, shockwaves, regeneration, the Vis
+5. **Core Siege.** Halves on one core, the core entity and its health, shielding, shockwaves, the Vis
    bonus, timed respawns, its boss bar and win rules.
 6. **Polish.** Stats and a leaderboard; map rotation (the least recently played free map, random among ties) and the
    menu's "Waiting for a free map"; no more "moved too quickly" after match teleports. Map voting is left for later.

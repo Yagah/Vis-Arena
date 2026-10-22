@@ -19,8 +19,14 @@ import net.minecraft.server.level.ServerPlayer;
  * engine ({@link Match}) runs everything else the same for every mode.
  */
 public interface ModeRules {
-    /** How a match ended: the winning players (one, or a whole team; none for a draw), and what everyone is shown. */
-    record Result(Set<UUID> winners, Component headline, Component detail) {
+    /**
+     * How a match ended: the winning players (one, or a whole team; none for a draw), what everyone is shown, and whether
+     * it counts in the stats (a no-contest doesn't).
+     */
+    record Result(Set<UUID> winners, Component headline, Component detail, boolean recorded) {
+        public Result(Set<UUID> winners, Component headline, Component detail) {
+            this(winners, headline, detail, true);
+        }
     }
 
     /** A finished round: who took it (empty for a drawn round) and the headline shown. */
@@ -33,6 +39,11 @@ public interface ModeRules {
      */
     default boolean rounds() {
         return false;
+    }
+
+    /** True if each round won is a point for a fighter (1v1), shown in the summary; not for Core Siege's team halves. */
+    default boolean roundPoints() {
+        return rounds();
     }
 
     /** What a round is called on screen ("Round", or "Half" in Core Siege). */

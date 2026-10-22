@@ -350,17 +350,19 @@ public final class Match {
         this.result = result;
         state = State.ENDED;
         stateTicks = 0;
-        // Everyone who played counts, leavers included (as a game not won). A stopped match isn't recorded.
-        ArenaStats stats = ArenaStats.get(level.getServer());
-        for (Fighter fighter : fighters.values()) {
-            stats.add(fighter.id(), fighter.name(), mode, result.winners().contains(fighter.id()), fighter.kills(), fighter.deaths());
+        // Everyone who played counts, leavers included (as a game not won). A stopped match or a no-contest isn't recorded.
+        if (result.recorded()) {
+            ArenaStats stats = ArenaStats.get(level.getServer());
+            for (Fighter fighter : fighters.values()) {
+                stats.add(fighter.id(), fighter.name(), mode, result.winners().contains(fighter.id()), fighter.kills(), fighter.deaths());
+            }
         }
         MutableComponent summary = Component.literal(mode.displayName() + " on " + map.name() + ": ").withStyle(ChatFormatting.GOLD)
                 .append(result.headline().copy());
         fighters.values().stream()
                 .sorted(Comparator.comparingInt(Fighter::kills).reversed().thenComparingInt(Fighter::deaths))
                 .forEach(fighter -> summary.append(Component.literal("\n  ")).append(name(fighter))
-                        .append(Component.literal(": " + (rules.rounds() ? fighter.roundsWon() + " rounds, " : "")
+                        .append(Component.literal(": " + (rules.roundPoints() ? fighter.roundsWon() + " rounds, " : "")
                                 + fighter.kills() + " kills, " + fighter.deaths() + " deaths").withStyle(ChatFormatting.GRAY)));
         for (ServerPlayer player : online()) {
             Titles.show(player, result.headline(), result.detail(), ArenaConfig.ticks(ArenaConfig.END_SECONDS));

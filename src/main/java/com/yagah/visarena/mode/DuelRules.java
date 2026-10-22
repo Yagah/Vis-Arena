@@ -22,12 +22,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * 1v1: rounds. Whoever is left standing takes the round; when a round's time runs out, the one with more health left
- * (as a share of their max) takes it, or nobody on a tie. First to the score limit in rounds wins the match. Drawn
- * rounds can't go on forever: after {@link #ROUND_CAP} times the limit, the leader wins or it's a draw.
+ * 1v1: rounds. Whoever is left standing takes the round. A round that runs out of time with nobody downed (or with both
+ * down) is drawn, whatever their health. First to the score limit in rounds wins the match; "drawsToEnd" (3) drawn rounds
+ * end it as no contest: everyone back to the lobby, nothing recorded.
  */
 public final class DuelRules implements ModeRules {
-    private static final int ROUND_CAP = 3;
+    /** Drawn rounds so far this match. */
+    private int draws;
 
     @Override
     public boolean rounds() {
@@ -76,20 +77,8 @@ public final class DuelRules implements ModeRules {
         if (standing.isEmpty()) {
             return Optional.of(drawn("Both went down"));
         }
-        if (!timeUp) {
-            return Optional.empty();
-        }
-        // Time's up: the healthier fighter, by share of max health, takes it.
-        Map<Fighter, Float> health = new HashMap<>();
-        for (ServerPlayer player : match.online()) {
-            Fighter fighter = match.fighters().get(player.getUUID());
-            if (standing.contains(fighter)) {
-                health.put(fighter, player.getHealth() / player.getMaxHealth());
-            }
-        }
-        float best = health.values().stream().max(Float::compare).orElse(0f);
-        List<Fighter> leaders = health.entrySet().stream().filter(entry -> entry.getValue() == best).map(Map.Entry::getKey).toList();
-        return Optional.of(leaders.size() == 1 ? takes(leaders.getFirst()) : drawn("Time's up, level on health"));
+        // Time's up with nobody downed: a draw, whoever has more health.
+        return timeUp ? Optional.of(drawn("Time's up")) : Optional.empty();
     }
 
     @Override
@@ -103,21 +92,17 @@ public final class DuelRules implements ModeRules {
         if (reached.isPresent()) {
             return Optional.of(win(match, reached.get(), score(match)));
         }
-        if (match.round() >= limit * ROUND_CAP) {
+        if (draws >= ArenaConfig.DUEL_DRAWS_TO_END.get()) {
             return timeUp(match, true);
         }
         return Optional.empty();
     }
 
-    /** Only reached at the round cap: the one with more rounds, else a draw. */
+    /** Only reached on too many drawn rounds: no contest, back to the lobby with nothing recorded. */
     @Override
     public Optional<Result> timeUp(Match match, boolean last) {
-        List<Fighter> ranked = match.fighters().values().stream()
-                .sorted(Comparator.comparingInt(Fighter::roundsWon).reversed()).toList();
-        if (ranked.size() > 1 && ranked.get(0).roundsWon() > ranked.get(1).roundsWon()) {
-            return Optional.of(win(match, ranked.getFirst(), score(match)));
-        }
-        return Optional.of(new Result(Set.of(), Component.literal("Draw").withStyle(ChatFormatting.YELLOW), Component.literal(score(match))));
+        return Optional.of(new Result(Set.of(), Component.literal("No contest").withStyle(ChatFormatting.YELLOW),
+                Component.literal(draws + " drawn rounds: nothing recorded"), false));
     }
 
     @Override
@@ -129,6 +114,7 @@ public final class DuelRules implements ModeRules {
         }
         lines.add(Component.empty());
         lines.add(Component.literal("First to " + ArenaConfig.scoreLimit(ArenaMode.DUEL) + " rounds").withStyle(ChatFormatting.GRAY));
+        lines.add(Component.literal("Draws " + draws + " of " + ArenaConfig.DUEL_DRAWS_TO_END.get()).withStyle(ChatFormatting.GRAY));
         return lines;
     }
 
@@ -161,7 +147,8 @@ public final class DuelRules implements ModeRules {
         return new RoundEnd(Optional.of(fighter.id()), Component.literal("Round to " + fighter.name()).withStyle(ChatFormatting.GOLD));
     }
 
-    private static RoundEnd drawn(String why) {
+    private RoundEnd drawn(String why) {
+        draws++;
         return new RoundEnd(Optional.empty(), Component.literal("Round drawn").withStyle(ChatFormatting.YELLOW)
                 .append(Component.literal(" (" + why + ")").withStyle(ChatFormatting.GRAY)));
     }

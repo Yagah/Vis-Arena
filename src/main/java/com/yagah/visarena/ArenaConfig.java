@@ -88,9 +88,12 @@ public final class ArenaConfig {
                     .comment("Most players in one " + mode.displayName() + " match.")
                     .defineInRange("maxPlayers", mode.defaultMax(), 2, 64);
             ModConfigSpec.IntValue scoreLimit = BUILDER
-                    .comment(mode == ArenaMode.CORE_SIEGE ? "Not used: Core Siege is won on time and damage (see [core_siege_rules])."
-                            : mode == ArenaMode.TDM ? "Team kills that win a Team Deathmatch of 4 or more per side (smaller ones: see [tdm_rules])."
-                            : "Score that wins a " + mode.displayName() + " match outright (kills or rounds).")
+                    .comment(switch (mode) {
+                        case FFA -> "Not used: FFA's kill target grows with the players (see [ffa_rules]).";
+                        case TDM -> "Not used: see teamKillTarget in [tdm_rules].";
+                        case DUEL -> "Rounds that win a 1v1.";
+                        case CORE_SIEGE -> "Not used: Core Siege is won on time and damage (see [core_siege_rules]).";
+                    })
                     .defineInRange("scoreLimit", mode.defaultScoreLimit(), 1, 1000);
             ModConfigSpec.IntValue timeLimit = BUILDER
                     .comment("Seconds a " + mode.displayName() + " match (or round) lasts.")
@@ -101,16 +104,30 @@ public final class ArenaConfig {
     }
 
     static {
+        BUILDER.push("ffa_rules");
+    }
+
+    public static final ModConfigSpec.IntValue FFA_KILLS_PER_PLAYER = BUILDER
+            .comment("FFA is first to this many kills per player in the match (2: 2 players play to 4, 3 to 6, 4 to 8).")
+            .defineInRange("killsPerPlayer", 2, 1, 100);
+
+    static {
+        BUILDER.pop();
         BUILDER.push("tdm_rules");
     }
 
-    public static final ModConfigSpec.IntValue TDM_SMALL_SCORE_LIMIT = BUILDER
-            .comment("Team kills that win a Team Deathmatch of 2 or fewer per side (the bigger team, if uneven).")
-            .defineInRange("twoPerSideScoreLimit", 15, 1, 1000);
+    public static final ModConfigSpec.IntValue TDM_KILL_TARGET = BUILDER
+            .comment("Team kills that win a Team Deathmatch, whatever the team sizes.")
+            .defineInRange("teamKillTarget", 10, 1, 1000);
 
-    public static final ModConfigSpec.IntValue TDM_MID_SCORE_LIMIT = BUILDER
-            .comment("Team kills that win a Team Deathmatch of 3 per side (the bigger team, if uneven).")
-            .defineInRange("threePerSideScoreLimit", 20, 1, 1000);
+    static {
+        BUILDER.pop();
+        BUILDER.push("duel_rules");
+    }
+
+    public static final ModConfigSpec.IntValue DUEL_DRAWS_TO_END = BUILDER
+            .comment("A 1v1 with this many drawn rounds (nobody downed) ends as no contest: back to the lobby, nothing recorded.")
+            .defineInRange("drawsToEnd", 3, 1, 100);
 
     static {
         BUILDER.pop();
@@ -133,16 +150,8 @@ public final class ArenaConfig {
             .comment("Seconds a downed defender waits (spectating) before respawning.")
             .defineInRange("defenderRespawnSeconds", 5, 0, 120);
 
-    public static final ModConfigSpec.IntValue REGEN_DELAY_SECONDS = BUILDER
-            .comment("Seconds with no attacker near the core zone before the core starts to heal.")
-            .defineInRange("regenDelaySeconds", 10, 1, 600);
-
-    public static final ModConfigSpec.DoubleValue REGEN_PERCENT_PER_SECOND = BUILDER
-            .comment("How fast the core heals, in percent of its health per second (never past its last shockwave mark).")
-            .defineInRange("regenPercentPerSecond", 1.0, 0.0, 100.0);
-
     public static final ModConfigSpec.DoubleValue NEAR_RADIUS = BUILDER
-            .comment("Blocks around the core zone that count as near it (for regeneration, shockwaves and the Vis bonus).")
+            .comment("Blocks around the core zone that count as near it (for shockwaves and the defenders' Vis bonus).")
             .defineInRange("nearRadius", 8.0, 0.0, 64.0);
 
     public static final ModConfigSpec.DoubleValue SHOCKWAVE_STRENGTH = BUILDER

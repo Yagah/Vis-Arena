@@ -21,7 +21,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * Free-for-all: everyone for themselves. First to the score limit in kills wins; when time runs out, the most kills
+ * Free-for-all: everyone for themselves. First to the kill target (2 per player, see killTarget) wins; when time runs out, the most kills
  * wins, with sudden death on a tie for the lead.
  */
 public final class FfaRules implements ModeRules {
@@ -57,7 +57,7 @@ public final class FfaRules implements ModeRules {
         if (present.size() == 1 && match.fighters().size() > 1) {
             return Optional.of(win(present.getFirst(), "Everyone else left"));
         }
-        int limit = ArenaConfig.scoreLimit(ArenaMode.FFA);
+        int limit = killTarget(match);
         Optional<Fighter> reached = present.stream().filter(fighter -> fighter.kills() >= limit).findFirst();
         if (reached.isPresent()) {
             return Optional.of(win(reached.get(), reached.get().kills() + " kills"));
@@ -88,11 +88,19 @@ public final class FfaRules implements ModeRules {
                 .withStyle(fighter.present() ? ChatFormatting.WHITE : ChatFormatting.DARK_GRAY)
                 .append(Component.literal(String.valueOf(fighter.kills())).withStyle(ChatFormatting.GOLD))));
         lines.add(Component.empty());
-        lines.add(Component.literal("First to " + ArenaConfig.scoreLimit(ArenaMode.FFA) + " kills").withStyle(ChatFormatting.GRAY));
+        lines.add(Component.literal("First to " + killTarget(match) + " kills").withStyle(ChatFormatting.GRAY));
         return lines;
     }
 
     /** Most kills first; fewer deaths breaks ties in the listing. */
+    /**
+     * The kills that win: "killsPerPlayer" (2) for every player who started the match (leavers still count, so it doesn't
+     * move mid-match). 2 players play to 4, 3 to 6, 4 to 8.
+     */
+    private static int killTarget(Match match) {
+        return ArenaConfig.FFA_KILLS_PER_PLAYER.get() * match.fighters().size();
+    }
+
     private static List<Fighter> ranked(Match match) {
         return match.fighters().values().stream()
                 .sorted(Comparator.comparingInt(Fighter::kills).reversed().thenComparingInt(Fighter::deaths))

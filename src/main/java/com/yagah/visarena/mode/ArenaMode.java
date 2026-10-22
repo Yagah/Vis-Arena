@@ -11,7 +11,7 @@ import net.minecraft.world.item.Items;
 /** The game modes, with what a map needs to host each and how the menu shows it. */
 public enum ArenaMode {
     FFA("ffa", "FFA", "Everyone for themselves. Most kills wins.", Items.IRON_SWORD, false, false, 2, 12, 15, 480),
-    TDM("tdm", "Team Deathmatch", "Two teams. Most team kills wins.", Items.SHIELD, true, false, 4, 12, 30, 600),
+    TDM("tdm", "Team Deathmatch", "Two teams. Most team kills wins.", Items.SHIELD, true, false, 4, 12, 10, 480),
     DUEL("duel", "1v1", "Two players, best of five rounds.", Items.GOLDEN_SWORD, false, false, 2, 2, 3, 120),
     CORE_SIEGE("core_siege", "Core Siege", "Two halves: break the core faster than they did.", Items.BEACON, true, true, 4, 12, 1, 240);
 

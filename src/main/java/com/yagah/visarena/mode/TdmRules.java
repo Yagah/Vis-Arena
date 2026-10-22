@@ -25,7 +25,7 @@ import net.minecraft.server.level.ServerPlayer;
 
 /**
  * Team deathmatch: red against blue (the match deals the teams). Every kill scores for the killer's team; first team to
- * the score limit wins. When time runs out the team with more kills wins, with sudden death on a tie. A team with
+ * "teamKillTarget" (10) wins. When time runs out the team with more kills wins, with sudden death on a tie. A team with
  * nobody left loses.
  */
 public final class TdmRules implements ModeRules {
@@ -114,18 +114,9 @@ public final class TdmRules implements ModeRules {
         return lines;
     }
 
-    /**
-     * The team kills that win, scaled to the match's size: the bigger team's size at the start (leavers still count, so
-     * it doesn't move mid-match). 2 or fewer per side, 3, or 4 and up each have their own limit in the config.
-     */
+    /** The team kills that win ("teamKillTarget", whatever the team sizes). */
     private static int scoreLimit(Match match) {
-        int perSide = 0;
-        for (TeamColor team : TeamColor.values()) {
-            perSide = Math.max(perSide, members(match, team).size());
-        }
-        return perSide <= 2 ? ArenaConfig.TDM_SMALL_SCORE_LIMIT.get()
-                : perSide == 3 ? ArenaConfig.TDM_MID_SCORE_LIMIT.get()
-                : ArenaConfig.scoreLimit(ArenaMode.TDM);
+        return ArenaConfig.TDM_KILL_TARGET.get();
     }
 
     private static List<ArenaMap.Spawn> spawns(Match match, TeamColor team) {

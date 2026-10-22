@@ -46,15 +46,16 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.EntityInvulnerabilityCheckEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 
 /**
  * Core Siege: two halves on one core. Red attacks it in the first while blue defends; then they swap. The core is a
  * vanilla shulker standing in the map's core zone, on the defending team (so defenders' abilities pass it by); hits on it
  * drain its own health instead of hurting it. While any defender stands in the zone it's shielded; it throws attackers
- * back at 75%, 50% and 25% (then is briefly immune); left alone by attackers it slowly heals, never past its last mark;
- * defenders near it regain Vis faster. A half ends when the core breaks or time runs out. A break beats a hold; the
- * faster break wins; with no break, the more damage; level is a draw.
+ * back at 75%, 50% and 25% (then is briefly immune); it never heals; defenders near it regain Vis faster. A half ends
+ * when the core breaks or time runs out (the second early only once it can't win: past the first team's break time). A
+ * break beats a hold; the faster break wins; with no break, the more damage; level is a draw.
  */
 @EventBusSubscriber(modid = VisArena.MODID)
 public final class SiegeRules implements ModeRules {
@@ -88,11 +89,9 @@ public final class SiegeRules implements ModeRules {
     private AABB near = zone;
     private float health;
     private float maxHealth = 1;
-    /** How many health marks it has fallen past this half, and how high it may heal back. */
+    /** How many health marks it has fallen past this half. */
     private int marksPassed;
-    private float regenCap = 1;
     private int immuneUntil;
-    private int lastAttackerNear;
     private boolean exposed = true;
 
     /** Red attacks in the first half, blue in the second. */
@@ -120,6 +119,12 @@ public final class SiegeRules implements ModeRules {
     @Override
     public String roundName() {
         return "Half";
+    }
+
+    /** Halves are scored on time and damage, not as points per player. */
+    @Override
+    public boolean roundPoints() {
+        return false;
     }
 
     @Override
@@ -177,9 +182,7 @@ public final class SiegeRules implements ModeRules {
         maxHealth = ArenaConfig.CORE_HEALTH.get();
         health = maxHealth;
         marksPassed = 0;
-        regenCap = 1;
         immuneUntil = 0;
-        lastAttackerNear = match.ticks();
         exposed = true;
         if (!level.getBlockState(spot.below()).isFaceSturdy(level, spot.below(), Direction.UP)) {
             VisArena.LOGGER.warn("Map {}: no solid floor in the middle of the core zone; the core floats at {}", match.map().name(), spot);
@@ -254,7 +257,7 @@ public final class SiegeRules implements ModeRules {
         }
         int now = match.ticks();
         if (now % CHECK_TICKS == 0) {
-            checkZone(match, now);
+            checkZone(match);
         }
         if (now % 20 == 0) {
             visBonus(match);
@@ -267,25 +270,16 @@ public final class SiegeRules implements ModeRules {
         }
     }
 
-    /** Shielding (any defender in the zone), regeneration (no attacker near for a while), and the bar. */
-    private void checkZone(Match match, int now) {
+    /** Shielding (any defender in the zone), and the bar. The core never heals. */
+    private void checkZone(Match match) {
         boolean defended = false;
-        boolean attackerNear = false;
         for (ServerPlayer player : standing(match)) {
-            SiegeSide side = side(match, match.fighters().get(player.getUUID()));
-            if (side == SiegeSide.DEFEND && player.getBoundingBox().intersects(zone)) {
+            if (side(match, match.fighters().get(player.getUUID())) == SiegeSide.DEFEND && player.getBoundingBox().intersects(zone)) {
                 defended = true;
-            } else if (side == SiegeSide.ATTACK && player.getBoundingBox().intersects(near)) {
-                attackerNear = true;
+                break;
             }
         }
         exposed = !defended;
-        if (attackerNear) {
-            lastAttackerNear = now;
-        } else if (now - lastAttackerNear >= ArenaConfig.ticks(ArenaConfig.REGEN_DELAY_SECONDS) && health > 0) {
-            float heal = (float) (maxHealth * ArenaConfig.REGEN_PERCENT_PER_SECOND.get() / 100 * CHECK_TICKS / 20);
-            health = Math.min(health + heal, maxHealth * regenCap);
-        }
         updateBar();
     }
 
@@ -355,12 +349,11 @@ public final class SiegeRules implements ModeRules {
         updateBar();
     }
 
-    /** At a health mark: attackers near are thrown back, and the core is immune for a moment and won't heal past it. */
+    /** At a health mark: attackers near are thrown back, and the core is immune for a moment. */
     private void shockwave(float mark) {
         if (match == null) {
             return;
         }
-        regenCap = mark;
         immuneUntil = match.ticks() + ArenaConfig.ticks(ArenaConfig.SHOCKWAVE_IMMUNITY_SECONDS);
         ServerLevel level = match.level();
         level.sendParticles(ParticleTypes.SONIC_BOOM, corePos.x, corePos.y + 0.5, corePos.z, 1, 0, 0, 0, 0);
@@ -409,12 +402,13 @@ public final class SiegeRules implements ModeRules {
     }
 
     /**
-     * In the second half, true once its result can't change the winner: the first attackers broke the core and this
-     * half has run longer without a break, or they didn't and these attackers have already done more damage.
+     * In the second half, true once it can't change the winner: the first attackers broke the core and these have now
+     * gone past that time without breaking it. That's the only early end; otherwise the second attackers get their full
+     * half (or until they break the core).
      */
     private boolean settled(Match match) {
         Half first = halves.getFirst();
-        return first.broke() ? health > 0 && match.elapsed() > first.ticks() : damage() > first.damage();
+        return first.broke() && health > 0 && match.elapsed() > first.ticks();
     }
 
     @Override
@@ -429,9 +423,8 @@ public final class SiegeRules implements ModeRules {
         if (halves.size() == 1 && settled(match)) {
             halves.add(new Half(attacking, false, match.elapsed(), damage()));
             Half first = halves.getFirst();
-            return Optional.of(new RoundEnd(Optional.empty(), Component.literal(first.broke()
-                    ? defending.displayName() + " held past " + clock(first.ticks())
-                    : attacking.displayName() + " passed " + percent(first.damage())).withStyle(ChatFormatting.GOLD)));
+            return Optional.of(new RoundEnd(Optional.empty(), Component.literal(defending.displayName() + " held past "
+                    + clock(first.ticks())).withStyle(ChatFormatting.GOLD)));
         }
         if (timeUp) {
             halves.add(new Half(attacking, false, match.elapsed(), damage()));
@@ -535,11 +528,23 @@ public final class SiegeRules implements ModeRules {
     // ---- Events ----
 
     /**
-     * Nothing hurts a core for real: every hit is cancelled, and an attacker's (Vis abilities, summons and projectiles
-     * included, through Vis Mod's owner chain) counts against its own health. Runs after Vis Mod's ally check, which has
-     * already cancelled the defenders' hits.
+     * Shulkers are fire-immune in vanilla, which would throw away fire abilities' hits (Flame Blast) before any damage
+     * event; a core takes every kind of hit, so it can be counted below.
      */
-    @SubscribeEvent(priority = EventPriority.HIGH)
+    @SubscribeEvent
+    static void onInvulnerabilityCheck(EntityInvulnerabilityCheckEvent event) {
+        if (CORES.containsKey(event.getEntity().getUUID()) && !event.getEntity().isRemoved()) {
+            event.setInvulnerable(false);
+        }
+    }
+
+    /**
+     * Nothing hurts a core for real: every hit is cancelled, and an attacker's (Vis abilities, summons and projectiles
+     * included, through Vis Mod's owner chain) counts against its own health. Runs last, so every other handler has had
+     * its say first: Vis Mod's ally check has cancelled the defenders' hits, and charged punches (Concentrated Punch and
+     * the like) have set their damage.
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     static void onIncomingDamage(LivingIncomingDamageEvent event) {
         SiegeRules rules = CORES.get(event.getEntity().getUUID());
         if (rules == null) {
