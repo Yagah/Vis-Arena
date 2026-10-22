@@ -30,7 +30,7 @@ import net.minecraft.world.item.Items;
 public final class ModeMenu {
     private static final int ROWS = 3;
     /** Where each mode's button sits, in ArenaMode order. */
-    private static final int[] MODE_SLOTS = {10, 12, 14, 16};
+    private static final int[] MODE_SLOTS = {11, 12, 13, 14, 15};
     private static final int CLOSE_SLOT = 22;
     private static final int STATS_SLOT = 26;
 

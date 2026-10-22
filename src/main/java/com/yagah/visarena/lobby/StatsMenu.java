@@ -21,7 +21,7 @@ public final class StatsMenu {
     private static final int ROWS = 3;
     private static final int OVERALL_SLOT = 4;
     /** Where each mode sits, in ArenaMode order (as in the mode menu). */
-    private static final int[] MODE_SLOTS = {10, 12, 14, 16};
+    private static final int[] MODE_SLOTS = {11, 12, 13, 14, 15};
     private static final int BACK_SLOT = 22;
     private static final int TOP = 5;
 

@@ -14,6 +14,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * An arena: a place built by hand in one dimension, marked with /arena map commands. It lists the modes it hosts, its
@@ -22,14 +23,24 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 public final class ArenaMap {
     /**
      * A spawn point. Plain ones (and team ones) serve FFA and 1v1; one with a team serves only that team in TDM; one
-     * with a siege side serves only that side in Core Siege.
+     * with a siege side serves only that side in Core Siege and Payload. In Payload, its stage (0 at the start, then one
+     * more past each checkpoint) says when it's used.
      */
-    public record Spawn(Spot spot, Optional<TeamColor> team, Optional<SiegeSide> side) {
+    public record Spawn(Spot spot, Optional<TeamColor> team, Optional<SiegeSide> side, int stage) {
         public static final Codec<Spawn> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Spot.CODEC.fieldOf("spot").forGetter(Spawn::spot),
                 TeamColor.CODEC.optionalFieldOf("team").forGetter(Spawn::team),
-                SiegeSide.CODEC.optionalFieldOf("side").forGetter(Spawn::side)
+                SiegeSide.CODEC.optionalFieldOf("side").forGetter(Spawn::side),
+                Codec.INT.optionalFieldOf("stage", 0).forGetter(Spawn::stage)
         ).apply(instance, Spawn::new));
+    }
+
+    /** A point on the Payload track; the track runs straight from one to the next. A checkpoint locks progress there. */
+    public record TrackPoint(Vec3 pos, boolean checkpoint) {
+        public static final Codec<TrackPoint> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Vec3.CODEC.fieldOf("pos").forGetter(TrackPoint::pos),
+                Codec.BOOL.optionalFieldOf("checkpoint", false).forGetter(TrackPoint::checkpoint)
+        ).apply(instance, TrackPoint::new));
     }
 
     private static final Codec<ArenaMode> MODE_CODEC = Codec.STRING.xmap(
@@ -41,7 +52,8 @@ public final class ArenaMap {
             MODE_CODEC.listOf().fieldOf("modes").forGetter(map -> List.copyOf(map.modes)),
             Spawn.CODEC.listOf().fieldOf("spawns").forGetter(map -> map.spawns),
             Codec.INT.optionalFieldOf("floor").forGetter(map -> map.floor),
-            BoundingBox.CODEC.optionalFieldOf("core").forGetter(map -> map.core)
+            BoundingBox.CODEC.optionalFieldOf("core").forGetter(map -> map.core),
+            TrackPoint.CODEC.listOf().optionalFieldOf("track", List.of()).forGetter(map -> map.track)
     ).apply(instance, ArenaMap::new));
 
     private final String name;
@@ -50,13 +62,15 @@ public final class ArenaMap {
     private final List<Spawn> spawns;
     private Optional<Integer> floor;
     private Optional<BoundingBox> core;
+    private final List<TrackPoint> track;
 
     public ArenaMap(String name, ResourceKey<Level> dimension) {
-        this(name, dimension, List.of(), List.of(), Optional.empty(), Optional.empty());
+        this(name, dimension, List.of(), List.of(), Optional.empty(), Optional.empty(), List.of());
     }
 
     private ArenaMap(String name, ResourceKey<Level> dimension, List<ArenaMode> modes, List<Spawn> spawns,
-            Optional<Integer> floor, Optional<BoundingBox> core) {
+            Optional<Integer> floor, Optional<BoundingBox> core, List<TrackPoint> track) {
+        this.track = new ArrayList<>(track);
         this.name = name;
         this.dimension = dimension;
         this.modes.addAll(modes);
@@ -94,6 +108,23 @@ public final class ArenaMap {
         return spawns.stream().filter(spawn -> spawn.side().equals(Optional.of(side))).toList();
     }
 
+    /** A side's spawns for a Payload stage: the latest stage at or before it that has any (so stages may be skipped). */
+    public List<Spawn> stageSpawns(SiegeSide side, int stage) {
+        for (int s = stage; s >= 0; s--) {
+            int wanted = s;
+            List<Spawn> found = siegeSpawns(side).stream().filter(spawn -> spawn.stage() == wanted).toList();
+            if (!found.isEmpty()) {
+                return found;
+            }
+        }
+        return siegeSpawns(side);
+    }
+
+    /** The Payload track, start to end. */
+    public List<TrackPoint> track() {
+        return track;
+    }
+
     public Optional<Integer> floor() {
         return floor;
     }
@@ -114,7 +145,16 @@ public final class ArenaMap {
     /** What this map still lacks to host the mode; empty once it is ready. */
     public List<String> missing(ArenaMode mode) {
         List<String> missing = new ArrayList<>();
-        if (mode.cores()) {
+        if (mode.track()) {
+            if (track.size() < 2) {
+                missing.add("a payload track (start and end, at least)");
+            }
+            for (SiegeSide side : SiegeSide.values()) {
+                if (stageSpawns(side, 0).stream().noneMatch(spawn -> spawn.stage() == 0)) {
+                    missing.add("an " + side.id() + " spawn for stage 0");
+                }
+            }
+        } else if (mode.cores()) {
             if (core.isEmpty()) {
                 missing.add("a core zone");
             }

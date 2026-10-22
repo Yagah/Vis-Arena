@@ -76,12 +76,20 @@ public final class ArenaCommands {
                                         .then(Commands.literal("remove").then(modeArgument().executes(ctx -> setMode(ctx, false)))))
                                 .then(Commands.literal("spawn")
                                         .then(Commands.literal("add")
-                                                .executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.empty()))
-                                                .then(Commands.literal("red").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.RED), Optional.empty())))
-                                                .then(Commands.literal("blue").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.BLUE), Optional.empty())))
-                                                .then(Commands.literal("attack").executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.of(SiegeSide.ATTACK))))
-                                                .then(Commands.literal("defend").executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.of(SiegeSide.DEFEND)))))
+                                                .executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.empty(), 0))
+                                                .then(Commands.literal("red").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.RED), Optional.empty(), 0)))
+                                                .then(Commands.literal("blue").executes(ctx -> addSpawn(ctx, Optional.of(TeamColor.BLUE), Optional.empty(), 0)))
+                                                .then(sideSpawn("attack", SiegeSide.ATTACK))
+                                                .then(sideSpawn("defend", SiegeSide.DEFEND)))
                                         .then(Commands.literal("clear").executes(ArenaCommands::clearSpawns)))
+                                .then(Commands.literal("payload")
+                                        .then(Commands.literal("start").executes(ctx -> addTrackPoint(ctx, TrackStep.START)))
+                                        .then(Commands.literal("point").executes(ctx -> addTrackPoint(ctx, TrackStep.POINT)))
+                                        .then(Commands.literal("checkpoint").executes(ctx -> addTrackPoint(ctx, TrackStep.CHECKPOINT)))
+                                        .then(Commands.literal("end").executes(ctx -> addTrackPoint(ctx, TrackStep.END)))
+                                        .then(Commands.literal("undo").executes(ArenaCommands::undoTrackPoint))
+                                        .then(Commands.literal("clear").executes(ArenaCommands::clearTrack))
+                                        .then(Commands.literal("show").executes(ArenaCommands::showTrack)))
                                 .then(Commands.literal("floor")
                                         .then(Commands.literal("none").executes(ctx -> setFloor(ctx, Optional.empty())))
                                         .then(Commands.argument("y", IntegerArgumentType.integer(-2048, 2048))
@@ -233,6 +241,10 @@ public final class ArenaCommands {
         text.append(Component.literal("\n Floor: " + map.floor().map(String::valueOf).orElse("none")));
         text.append(Component.literal("\n Core zone: " + map.core().map(box -> box.getXSpan() + "x" + box.getYSpan() + "x"
                 + box.getZSpan() + " at " + box.minX() + " " + box.minY() + " " + box.minZ()).orElse("none")));
+        long checkpoints = map.track().stream().filter(ArenaMap.TrackPoint::checkpoint).count();
+        int topStage = map.spawns().stream().filter(spawn -> spawn.side().isPresent()).mapToInt(ArenaMap.Spawn::stage).max().orElse(0);
+        text.append(Component.literal("\n Payload track: " + (map.track().isEmpty() ? "none" : map.track().size() + " points, "
+                + checkpoints + " checkpoint(s), " + Math.round(trackLength(map)) + " blocks; spawns for stages 0-" + topStage)));
         if (map.modes().isEmpty()) {
             text.append(Component.literal("\n No modes yet: /arena map " + map.name() + " mode add <mode>").withStyle(ChatFormatting.RED));
         }
@@ -257,16 +269,95 @@ public final class ArenaCommands {
         return changed ? Command.SINGLE_SUCCESS : 0;
     }
 
-    private static int addSpawn(CommandContext<CommandSourceStack> ctx, Optional<TeamColor> team, Optional<SiegeSide> side)
+    /** An attack or defend spawn, with an optional Payload stage (0, the start, if left out). */
+    private static ArgumentBuilder<CommandSourceStack, ?> sideSpawn(String name, SiegeSide side) {
+        return Commands.literal(name)
+                .executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.of(side), 0))
+                .then(Commands.argument("stage", IntegerArgumentType.integer(0, 20))
+                        .executes(ctx -> addSpawn(ctx, Optional.empty(), Optional.of(side), IntegerArgumentType.getInteger(ctx, "stage"))));
+    }
+
+    private static int addSpawn(CommandContext<CommandSourceStack> ctx, Optional<TeamColor> team, Optional<SiegeSide> side, int stage)
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ArenaMap map = mapHere(ctx);
-        map.spawns().add(new ArenaMap.Spawn(Spot.of(player), team, side));
+        map.spawns().add(new ArenaMap.Spawn(Spot.of(player), team, side, stage));
         saved(ctx);
         String kind = team.map(TeamColor::id).or(() -> side.map(SiegeSide::id)).map(id -> id + " ").orElse("");
-        success(ctx, "Added " + (kind.startsWith("a") ? "an " : "a ") + kind + "spawn to " + map.name()
-                + " (" + map.spawns().size() + " in all)");
+        success(ctx, "Added " + (kind.startsWith("a") ? "an " : "a ") + kind + "spawn" + (stage > 0 ? " for stage " + stage : "")
+                + " to " + map.name() + " (" + map.spawns().size() + " in all)");
         return Command.SINGLE_SUCCESS;
+    }
+
+    // ---- Payload track ----
+
+    private enum TrackStep { START, POINT, CHECKPOINT, END }
+
+    /**
+     * A track point where you stand (at your feet). Start clears the track and begins it; a checkpoint is a point that
+     * locks progress; end is the last point (the delivery spot).
+     */
+    private static int addTrackPoint(CommandContext<CommandSourceStack> ctx, TrackStep step) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        ArenaMap map = mapHere(ctx);
+        if (step == TrackStep.START) {
+            map.track().clear();
+        } else if (map.track().isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("Start the track first: /arena map " + map.name() + " payload start"));
+            return 0;
+        }
+        map.track().add(new ArenaMap.TrackPoint(player.position(), step == TrackStep.CHECKPOINT));
+        saved(ctx);
+        long checkpoints = map.track().stream().filter(ArenaMap.TrackPoint::checkpoint).count();
+        success(ctx, switch (step) {
+            case START -> "Started the payload track of " + map.name() + " here";
+            case POINT -> "Added track point " + map.track().size();
+            case CHECKPOINT -> "Added checkpoint " + checkpoints + " (track point " + map.track().size() + ")";
+            case END -> "Ended the track here: " + map.track().size() + " points, " + checkpoints + " checkpoint(s), "
+                    + Math.round(trackLength(map)) + " blocks long";
+        });
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int undoTrackPoint(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ArenaMap map = map(ctx);
+        if (map.track().isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("Map " + map.name() + " has no track"));
+            return 0;
+        }
+        map.track().removeLast();
+        saved(ctx);
+        success(ctx, "Removed the last track point (" + map.track().size() + " left)");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int clearTrack(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ArenaMap map = map(ctx);
+        map.track().clear();
+        saved(ctx);
+        success(ctx, "Removed the payload track of " + map.name());
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** Draws the track in particles for a while: white along it, gold at checkpoints, green at the start, red at the end. */
+    private static int showTrack(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ArenaMap map = map(ctx);
+        ServerLevel level = ctx.getSource().getServer().getLevel(map.dimension());
+        if (level == null || map.track().size() < 2) {
+            ctx.getSource().sendFailure(Component.literal("Map " + map.name() + " has no track to show (it needs a start and an end)"));
+            return 0;
+        }
+        TrackPreview.show(level, map.track());
+        success(ctx, "Showing the track of " + map.name() + " for " + TrackPreview.SECONDS + " s (" + Math.round(trackLength(map)) + " blocks)");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static double trackLength(ArenaMap map) {
+        double length = 0;
+        for (int i = 1; i < map.track().size(); i++) {
+            length += map.track().get(i).pos().distanceTo(map.track().get(i - 1).pos());
+        }
+        return length;
     }
 
     private static int clearSpawns(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {

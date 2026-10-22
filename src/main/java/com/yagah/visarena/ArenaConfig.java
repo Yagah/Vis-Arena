@@ -93,6 +93,7 @@ public final class ArenaConfig {
                         case TDM -> "Not used: see teamKillTarget in [tdm_rules].";
                         case DUEL -> "Rounds that win a 1v1.";
                         case CORE_SIEGE -> "Not used: Core Siege is won on time and damage (see [core_siege_rules]).";
+                        case PAYLOAD -> "Not used: Payload is won on time and distance (see [payload_rules]).";
                     })
                     .defineInRange("scoreLimit", mode.defaultScoreLimit(), 1, 1000);
             ModConfigSpec.IntValue timeLimit = BUILDER
@@ -128,6 +129,55 @@ public final class ArenaConfig {
     public static final ModConfigSpec.IntValue DUEL_DRAWS_TO_END = BUILDER
             .comment("A 1v1 with this many drawn rounds (nobody downed) ends as no contest: back to the lobby, nothing recorded.")
             .defineInRange("drawsToEnd", 3, 1, 100);
+
+    static {
+        BUILDER.pop();
+        BUILDER.push("payload_rules");
+    }
+
+    public static final ModConfigSpec.DoubleValue PAYLOAD_RADIUS = BUILDER
+            .comment("Blocks from the payload within which players push or contest it (and attackers are healed).")
+            .defineInRange("pushRadius", 5.5, 0.5, 32.0);
+
+    public static final ModConfigSpec.DoubleValue PAYLOAD_SPEED = BUILDER
+            .comment("Blocks per second the payload moves with one attacker pushing.")
+            .defineInRange("speed", 1.5, 0.05, 20.0);
+
+    public static final ModConfigSpec.DoubleValue PAYLOAD_TWO_PUSHERS = BUILDER
+            .comment("Speed multiplier with two attackers pushing.")
+            .defineInRange("twoPushersMultiplier", 1.25, 1.0, 10.0);
+
+    public static final ModConfigSpec.DoubleValue PAYLOAD_THREE_PUSHERS = BUILDER
+            .comment("Speed multiplier with three or more attackers pushing (the cap).")
+            .defineInRange("threePushersMultiplier", 1.5, 1.0, 10.0);
+
+    public static final ModConfigSpec.IntValue PAYLOAD_ROLLBACK_DELAY_SECONDS = BUILDER
+            .comment("Seconds with no attacker near before the payload starts rolling back (never past a checkpoint).")
+            .defineInRange("rollbackDelaySeconds", 8, 1, 600);
+
+    public static final ModConfigSpec.DoubleValue PAYLOAD_ROLLBACK_SPEED = BUILDER
+            .comment("Blocks per second the payload rolls back.")
+            .defineInRange("rollbackSpeed", 0.5, 0.0, 20.0);
+
+    public static final ModConfigSpec.DoubleValue PAYLOAD_HEAL_PER_SECOND = BUILDER
+            .comment("Health per second for each attacker near the payload.")
+            .defineInRange("healPerSecond", 1.0, 0.0, 100.0);
+
+    public static final ModConfigSpec.IntValue PAYLOAD_CHECKPOINT_SECONDS = BUILDER
+            .comment("Seconds added to the clock when the attackers reach a checkpoint.")
+            .defineInRange("checkpointBonusSeconds", 60, 0, 3600);
+
+    public static final ModConfigSpec.DoubleValue PAYLOAD_OVERTIME_GRACE_SECONDS = BUILDER
+            .comment("In overtime, how long the payload may go without an attacker near before the defenders win.")
+            .defineInRange("overtimeGraceSeconds", 1.0, 0.05, 60.0);
+
+    public static final ModConfigSpec.IntValue PAYLOAD_ATTACKER_RESPAWN_SECONDS = BUILDER
+            .comment("Seconds a downed attacker waits (spectating) before respawning.")
+            .defineInRange("attackerRespawnSeconds", 5, 0, 120);
+
+    public static final ModConfigSpec.IntValue PAYLOAD_DEFENDER_RESPAWN_SECONDS = BUILDER
+            .comment("Seconds a downed defender waits (spectating) before respawning.")
+            .defineInRange("defenderRespawnSeconds", 5, 0, 120);
 
     static {
         BUILDER.pop();

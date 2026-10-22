@@ -10,6 +10,8 @@ for a mode, and are sent into an arena map when enough players are ready. Modes:
 - **1v1** (duel): two players, best of several short rounds.
 - **Core Siege**: two teams take turns, one half each, attacking one core while the other defends. Break it faster
   than the other team did, or do more damage to it if neither breaks it.
+- **Payload**: two teams take turns, one half each, pushing a payload along the map's track while the other defends.
+  Deliver it faster than the other team did, or push it farther if neither delivers.
 
 The server's world is dedicated to the arenas, so the mod owns everything about players there: their position, game
 mode, inventory and health. There is no saving and restoring of survival inventories.
@@ -66,6 +68,7 @@ Falling below the map's floor height counts as a death (void arenas).
 | TDM | 4–12 | 2, balanced | first team to 10 kills; else most | 8 min |
 | 1v1 | 2 | none | first to 3 rounds | 2 min per round |
 | Core Siege | 4–12 | 2, balanced | broke the core faster; else more damage | 4 min per half |
+| Payload | 4–12 | 2, balanced | delivered faster; else pushed farther | 4 min per half, +1 min per checkpoint |
 
 All numbers are config. Ties: FFA and TDM go to sudden death (next kill wins, 60 s,
 then a draw); Core Siege has none (see below).
@@ -114,6 +117,31 @@ whenever someone leaves, so it moves to whichever team is short.
   (which ends the match on their time). The one early end: the first team broke the core, and the second attackers
   pass that time without breaking it, so they can no longer win.
 
+**Payload.** Two halves on one track. In the first, red attacks and blue defends; in the second they swap.
+
+- **The payload** is only a distance along the map's track, decided on the server: no physics, so nothing can snag,
+  sink or shove it. Players see a translucent light-gray glass shell (1.4 blocks) around a glowing sea-lantern core in
+  the attackers' colour, floating and bobbing over the track and turned along it (`PayloadCart`: vanilla block displays
+  that glide between the positions the server sets each tick, never saved with the world). It has no hitbox and no
+  collision: no ability can touch it, players walk through it, and standing inside it shields nobody (everyone inside
+  stays visible through the glass).
+- **Pushing**: attackers within `pushRadius` (5.5 blocks) move it forward at `speed` (1.5 blocks a second), ×1.25 with
+  two and ×1.5 with three or more (the cap). A ring of dust on the ground shows the zone. Attackers in it heal
+  (`healPerSecond`, 1).
+- **Contesting**: any defender in the zone stops it, however many attackers are there.
+- **Rollback**: with no attacker in the zone for `rollbackDelaySeconds` (8), it rolls back at `rollbackSpeed` (0.5
+  blocks a second), never past the last checkpoint.
+- **Checkpoints** add `checkpointBonusSeconds` (60) to the clock, lock the progress in, and move both sides to the next
+  stage's spawns (spawns marked with a stage number; the latest stage at or before the current one with spawns is used).
+- **Overtime**: when the clock runs out with an attacker in the zone, the half plays on while one stays there;
+  `overtimeGraceSeconds` (1) with nobody in it ends it.
+- **Respawning**: 5 s spectating for each side, as in Core Siege.
+- **A half ends** on delivery or when time (4 min, plus checkpoint time) runs out. Winning compares time used: both
+  delivered, the faster wins; one delivered, it wins; neither, the farther push wins; level is a draw. The second half
+  ends early only once it can't win: the first team delivered and the second has gone past that time.
+- **HUD**: a boss bar with progress and what it's doing (Pushing ×2, Contested, Rolling back, Overtime), the sidebar with
+  progress, checkpoints and the score to beat, and titles at checkpoints and overtime.
+
 ## Maps
 
 An arena map is a named area in the world with:
@@ -123,6 +151,9 @@ An arena map is a named area in the world with:
 - **Floor height**: below it is a void death.
 - **Core zone** (Core Siege only): a box; the core stands on its floor, in the middle. Core Siege uses its own
   spawns, marked as attacker or defender spawns.
+- **Payload track** (Payload only): points from start to end, the payload running straight between them (more points
+  for smoother curves, following their heights for ramps), some of them checkpoints. Payload uses the attacker and
+  defender spawns too, each with a stage: 0 at the start, 1 after the first checkpoint, and so on.
 - **Bounds** (optional): leaving them counts as a death.
 
 Maps are built by hand in the world and marked with operator commands; they are stored in the world's SavedData. A map
@@ -142,6 +173,9 @@ All `/arena` commands need operator level 2.
 - `/arena map <name> spawn add [red|blue|attack|defend]` (where you stand and your facing; plain spawns are for FFA
   and 1v1, red and blue for TDM, attack and defend for Core Siege), `/arena map <name> spawn clear`.
 - `/arena map <name> floor <y|none>`, `/arena map <name> core <from> <to>` (the core zone), `core clear`.
+- `/arena map <name> spawn add attack|defend [stage]` (Payload stages; 0 if left out).
+- `/arena map <name> payload start|point|checkpoint|end` (a track point where you stand; start clears and begins the
+  track), `payload undo` (the last point), `payload clear`, `payload show` (the track in particles for 30 s).
 - `/arena map <name> check` (everything marked, and what each mode still needs), `/arena map <name> tp` (to its first
   spawn).
 - `/arena start <mode> [map]`: start a match now from that mode's queue (for testing with few players).
@@ -185,6 +219,8 @@ immunity, and the defenders' Vis bonus and its radius. Characters are locked dur
    bonus, timed respawns, its boss bar and win rules.
 6. **Polish.** Stats and a leaderboard; map rotation (the least recently played free map, random among ties) and the
    menu's "Waiting for a free map"; no more "moved too quickly" after match teleports. Map voting is left for later.
+7. **Payload.** The track and stage spawns, the payload and its push, contest, rollback, healing, checkpoints and
+   overtime, its HUD and win rules.
 
 ## Decisions and open questions
 

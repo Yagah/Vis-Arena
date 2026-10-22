@@ -87,6 +87,8 @@ public final class Match {
     /** Ticks since the current state began. */
     private int stateTicks;
     private int timeLeft;
+    /** Ticks of the current fight (or round) played so far, overtime included; time added doesn't change it. */
+    private int playTicks;
     private boolean suddenDeath;
     /** The round being played, from 1 (round modes only). */
     private int round = 1;
@@ -148,7 +150,18 @@ public final class Match {
 
     /** Ticks played of the current fight (or round), counting from its "Fight!". */
     public int elapsed() {
-        return state == State.PLAYING ? ArenaConfig.timeLimitTicks(mode) - timeLeft : 0;
+        return state == State.PLAYING ? playTicks : 0;
+    }
+
+    /** Adds time to the current fight's (or round's) clock, as a Payload checkpoint does. */
+    public void addTime(int ticks) {
+        timeLeft = Math.max(timeLeft, 0) + ticks;
+        updateHud();
+    }
+
+    /** True once the clock has run out but the mode is playing on (Payload's overtime). */
+    public boolean overtime() {
+        return state == State.PLAYING && timeLeft <= 0 && !suddenDeath;
     }
 
     /** The vanilla team for a side, in team modes. */
@@ -241,6 +254,7 @@ public final class Match {
             state = State.PLAYING;
             stateTicks = 0;
             timeLeft = ArenaConfig.timeLimitTicks(mode);
+            playTicks = 0;
             for (ServerPlayer player : online()) {
                 unfreeze(player);
                 Titles.show(player, Component.literal("Fight!").withStyle(ChatFormatting.RED, ChatFormatting.BOLD), Component.empty(), 20);
@@ -296,11 +310,16 @@ public final class Match {
                 return;
             }
         }
+        playTicks++;
         if (--timeLeft <= 0 && rules.rounds()) {
-            endRound(rules.roundOver(this, true).orElseThrow());
-            return;
+            // Out of time: the rules end the round, or (overtime) say play on, and are asked again next tick.
+            Optional<ModeRules.RoundEnd> roundEnd = rules.roundOver(this, true);
+            if (roundEnd.isPresent()) {
+                endRound(roundEnd.get());
+                return;
+            }
         }
-        if (timeLeft <= 0) {
+        if (timeLeft <= 0 && !rules.rounds()) {
             Optional<ModeRules.Result> timeUp = rules.timeUp(this, suddenDeath || ArenaConfig.SUDDEN_DEATH_SECONDS.get() == 0);
             if (timeUp.isPresent()) {
                 end(timeUp.get());
@@ -657,8 +676,10 @@ public final class Match {
         List<ServerPlayer> viewers = online();
         String time = clock(state == State.STARTING ? ArenaConfig.timeLimitTicks(mode) : timeLeft);
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.literal(suddenDeath ? "Sudden death " + time : (rules.rounds() ? rules.roundName() + " " + round + "  " : "Time ") + time)
-                .withStyle(suddenDeath ? ChatFormatting.RED : ChatFormatting.WHITE));
+        boolean overtime = overtime();
+        lines.add(Component.literal(suddenDeath ? "Sudden death " + time
+                        : (rules.rounds() ? rules.roundName() + " " + round + "  " : "Time ") + (overtime ? "OVERTIME" : time))
+                .withStyle(suddenDeath || overtime ? ChatFormatting.RED : ChatFormatting.WHITE));
         lines.add(Component.literal(" "));
         lines.addAll(rules.scoreLines(this));
         sidebar.update(lines, viewers);
@@ -670,7 +691,8 @@ public final class Match {
             }
             case PLAYING -> {
                 int total = suddenDeath ? ArenaConfig.ticks(ArenaConfig.SUDDEN_DEATH_SECONDS) : ArenaConfig.timeLimitTicks(mode);
-                bossBar.setName(Component.literal((suddenDeath ? "Sudden death " : mode.displayName() + (rules.rounds() ? " " + rules.roundName().toLowerCase() + " " + round : "") + "  ") + time));
+                bossBar.setName(Component.literal((suddenDeath ? "Sudden death " : mode.displayName() + (rules.rounds() ? " " + rules.roundName().toLowerCase() + " " + round : "") + "  ")
+                        + (overtime() ? "OVERTIME" : time)));
                 bossBar.setColor(suddenDeath ? BossEvent.BossBarColor.RED : BossEvent.BossBarColor.YELLOW);
                 bossBar.setProgress(Math.clamp(timeLeft / (float) Math.max(1, total), 0f, 1f));
             }

@@ -55,7 +55,7 @@ is `VisArena`.
 | --- | --- |
 | `.map` | Arena maps (spawns, regions, flags, cores), their SavedData and setup commands |
 | `.match` | The match engine: states, players, queue, countdown, end of match |
-| `.mode` | One class per game mode (FFA, TDM, Duel, Core Siege) |
+| `.mode` | One class per game mode (FFA, TDM, Duel, Core Siege, Payload) |
 | `.lobby` | Lobby spawn, the hotbar menu item and the chest menus |
 | `.hud` | Sidebar, boss bars, titles |
 | `.stats` | Players' records per mode (SavedData) for the leaderboard |
