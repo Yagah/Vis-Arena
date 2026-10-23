@@ -41,7 +41,7 @@ public final class Players {
         player.clearFire();
         player.setHealth(player.getMaxHealth());
         player.getFoodData().setFoodLevel(20);
-        player.getFoodData().setSaturation(5);
+        player.getFoodData().setSaturation(0);
         player.fallDistance = 0;
         player.setDeltaMovement(Vec3.ZERO);
         VisRound.reset(player);

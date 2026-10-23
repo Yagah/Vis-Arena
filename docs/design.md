@@ -25,6 +25,11 @@ It runs on the server only (see CLAUDE.md, "Server side only").
   put in a container, and it comes back if lost.
 - Nobody in the lobby can be hurt (abilities included), except by the void or `/kill`, which respawn them at the lobby
   spawn.
+- Nobody gets hungry, anywhere on the server (`noHunger`): every hunger bar is kept full and nothing wears it down.
+  Vanilla healing stays off, since the server runs with the naturalRegeneration gamerule off.
+- Out-of-combat regen (`[regen]`): in a match that is playing, a player who hasn't taken damage for 8 s heals half a
+  heart every 2 s, up to 70% of max health; the rest only comes from healers. Dealing damage doesn't reset the wait.
+  It's off in 1v1 (`inDuel`).
 - Using the item (right click) opens the **mode menu**: a chest screen with one icon per mode showing its name, how many
   are queued, and the players needed to start. Clicking queues you; clicking again (or the barrier icon) leaves.
   A player is in at most one queue.

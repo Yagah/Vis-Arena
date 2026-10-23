@@ -26,6 +26,11 @@ public final class ArenaConfig {
             .comment("The countdown shortens to this once the queue holds the most players a match takes.")
             .defineInRange("fullCountdownSeconds", 5, 1, 600);
 
+    public static final ModConfigSpec.BooleanValue NO_HUNGER = BUILDER
+            .comment("Keep every player's hunger bar full, everywhere on the server. Health still doesn't come back on its own",
+                    "while the naturalRegeneration gamerule is off.")
+            .define("noHunger", true);
+
     public static final ModConfigSpec.IntValue TEAM_COUNTDOWN_SECONDS = BUILDER
             .comment("The countdown in team modes, long enough to pick a side on the team screen. It doesn't shorten when full.")
             .defineInRange("teamCountdownSeconds", 20, 1, 600);
@@ -49,6 +54,35 @@ public final class ArenaConfig {
     public static final ModConfigSpec.IntValue SUDDEN_DEATH_SECONDS = BUILDER
             .comment("On a tie when time runs out, seconds of sudden death (the next kill to break the tie wins) before a draw.")
             .defineInRange("suddenDeathSeconds", 60, 0, 600);
+
+    static {
+        BUILDER.pop();
+        BUILDER.push("regen");
+    }
+
+    public static final ModConfigSpec.BooleanValue REGEN = BUILDER
+            .comment("Slowly heal match players who have gone a while without taking damage. Dealing damage doesn't reset the wait.")
+            .define("enabled", true);
+
+    public static final ModConfigSpec.IntValue REGEN_DELAY_SECONDS = BUILDER
+            .comment("Seconds without taking damage before healing starts.")
+            .defineInRange("delaySeconds", 8, 1, 600);
+
+    public static final ModConfigSpec.IntValue REGEN_INTERVAL_TICKS = BUILDER
+            .comment("Ticks between heals once it has started (20 ticks = 1 second).")
+            .defineInRange("intervalTicks", 40, 1, 1200);
+
+    public static final ModConfigSpec.DoubleValue REGEN_AMOUNT = BUILDER
+            .comment("Health healed each time (1 = half a heart).")
+            .defineInRange("amount", 1.0, 0.0, 40.0);
+
+    public static final ModConfigSpec.DoubleValue REGEN_CAP = BUILDER
+            .comment("Healing stops at this share of max health; the rest only comes from healers.")
+            .defineInRange("cap", 0.7, 0.0, 1.0);
+
+    public static final ModConfigSpec.BooleanValue REGEN_IN_DUEL = BUILDER
+            .comment("Whether 1v1 players heal too.")
+            .define("inDuel", false);
 
     static {
         BUILDER.pop();
